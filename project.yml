@@ -1,6 +1,6 @@
 name: Heeler
 options:
-  bundleIdPrefix: dev.bybee
+  bundleIdPrefix: dev.ricardofelixb
   deploymentTarget:
     iOS: "18.0"
   createIntermediateGroups: true
@@ -11,7 +11,7 @@ settings:
     # Swift 6 language mode implies complete strict concurrency checking.
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
-    DEVELOPMENT_TEAM: 9VM4RM39R3
+    DEVELOPMENT_TEAM: 5XNKUB5FEE
     CODE_SIGN_STYLE: Automatic
 
 packages:
@@ -73,12 +73,12 @@ targets:
         # manifest already declares multiple-scene support.
         NSUserActivityTypes:
           - dev.bybee.heeler.agent
-        # `heeler://agent` links (AgentActivityLink). A Live Activity tap
-        # opens its own app without this; other apps' links need it.
+        # Use a fork-only scheme so installing beside upstream cannot steal
+        # its links. Live Activities use this scheme too (AgentActivityLink).
         CFBundleURLTypes:
-          - CFBundleURLName: dev.bybee.heeler
+          - CFBundleURLName: dev.ricardofelixb.heeler
             CFBundleURLSchemes:
-              - heeler
+              - heeler-dev
     entitlements:
       path: Sources/Heeler/Heeler.entitlements
       properties:
@@ -89,13 +89,13 @@ targets:
         # Shared with the Notification Service Extension; doubles as the
         # Keychain access group holding the Notification Keys.
         com.apple.security.application-groups:
-          - group.dev.bybee.heeler.shared
+          - group.dev.ricardofelixb.heeler.shared
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: dev.bybee.heeler
-        # Home-screen name; the App Store listing is "Heeler for herdr".
-        INFOPLIST_KEY_CFBundleDisplayName: Heeler
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ricardofelixb.heeler
+        # Separate development app, installed alongside the upstream app.
+        INFOPLIST_KEY_CFBundleDisplayName: Heeler Dev
         MARKETING_VERSION: "0.1.14"
         CURRENT_PROJECT_VERSION: "27"
         # Scan to Pair (#62) reads the Pairing Code QR from the computer screen.
@@ -158,7 +158,7 @@ targets:
       path: Sources/HeelerNotificationService/HeelerNotificationService.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.dev.bybee.heeler.shared
+          - group.dev.ricardofelixb.heeler.shared
     info:
       path: Sources/HeelerNotificationService/Info.plist
       properties:
@@ -176,7 +176,7 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.bybee.heeler.NotificationService
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ricardofelixb.heeler.NotificationService
         MARKETING_VERSION: "0.1.14"
         CURRENT_PROJECT_VERSION: "27"
         # Match the containing app's iPhone and iPad device family.
@@ -207,7 +207,7 @@ targets:
       path: Sources/HeelerWidgets/HeelerWidgets.entitlements
       properties:
         com.apple.security.application-groups:
-          - group.dev.bybee.heeler.shared
+          - group.dev.ricardofelixb.heeler.shared
     info:
       path: Sources/HeelerWidgets/Info.plist
       properties:
@@ -219,12 +219,12 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # App Store validation (code 90360) requires a display name on
         # every embedded appex. Also the counts-only lock-screen fallback.
-        CFBundleDisplayName: Heeler
+        CFBundleDisplayName: Heeler Dev
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.bybee.heeler.Widgets
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ricardofelixb.heeler.Widgets
         MARKETING_VERSION: "0.1.14"
         CURRENT_PROJECT_VERSION: "27"
         # Match the containing app's iPhone and iPad device family.
@@ -260,7 +260,7 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: dev.bybee.heeler.tests
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ricardofelixb.heeler.tests
     dependencies:
       - target: Heeler
       - package: HeelerSSH

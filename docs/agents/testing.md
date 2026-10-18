@@ -62,6 +62,13 @@ project is complete. `make check-test-membership`, which `make test-tools` and
 the merge gate run, fails when the committed HeelerTests target omits a Swift
 file under `Tests/HeelerTests` or the shared scheme skips tests.
 
+## Fork physical-device development
+
+For a development-signed IPA built on the Mac and installed over USB from a
+Linux laptop, see [the iPhone USB guide](../guides/iphone-usb-development.md).
+`make ipa` exports locally without TestFlight; `make install` still requires a
+phone paired with the Mac's own devicectl.
+
 ## Fork self-hosted iOS CI
 
 See [the self-hosted guide](../guides/self-hosted-ios-ci.md) for the opt-in runner,

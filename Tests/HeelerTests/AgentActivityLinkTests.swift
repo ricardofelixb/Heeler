@@ -7,6 +7,17 @@ import Testing
 struct AgentActivityLinkTests {
     private let hostID = UUID(uuidString: "6D8EC348-4DAF-455C-BA8F-5FCC41799C0E")!
 
+    @Test func forkSchemeDoesNotClaimUpstreamLinks() throws {
+        let entries = try #require(
+            Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]])
+        let schemes = entries.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        #expect(schemes.contains(AgentActivityLink.scheme))
+        #expect(AgentActivityLink.scheme == "heeler-dev")
+        #expect(!schemes.contains("heeler"))
+        let url = try #require(AgentActivityLink.consoleURL(hostID: hostID.uuidString))
+        #expect(url.scheme == AgentActivityLink.scheme)
+    }
+
     @Test func agentURLRoundTripsPaneIDsWithColons() throws {
         let url = try #require(
             AgentActivityLink.agentURL(hostID: hostID.uuidString, paneID: "wV:p1"))

@@ -2172,19 +2172,19 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					081A3B29EFF2C7B2FCAA3248 = {
-						DevelopmentTeam = 9VM4RM39R3;
+						DevelopmentTeam = 5XNKUB5FEE;
 						ProvisioningStyle = Automatic;
 					};
 					134E6CD1AC1396155DAB93E2 = {
-						DevelopmentTeam = 9VM4RM39R3;
+						DevelopmentTeam = 5XNKUB5FEE;
 						ProvisioningStyle = Automatic;
 					};
 					9806EA6C63028F1217417282 = {
-						DevelopmentTeam = 9VM4RM39R3;
+						DevelopmentTeam = 5XNKUB5FEE;
 						ProvisioningStyle = Automatic;
 					};
 					DFFB82C74B73FA5CBCE6D5D2 = {
-						DevelopmentTeam = 9VM4RM39R3;
+						DevelopmentTeam = 5XNKUB5FEE;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -2900,7 +2900,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = 9VM4RM39R3;
+				DEVELOPMENT_TEAM = 5XNKUB5FEE;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -2935,7 +2935,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.14;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bybee.heeler.Widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.ricardofelixb.heeler.Widgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -2952,7 +2952,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEELER_SOURCE_REVISION = "";
 				INFOPLIST_FILE = Sources/Heeler/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Heeler;
+				INFOPLIST_KEY_CFBundleDisplayName = "Heeler Dev";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Heeler uses the camera to scan the Pairing Code shown on your computer, so you can add that machine without typing anything.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Heeler uses your local network to connect directly to Hosts on your Tailscale, ZeroTier, or EasyTier network when they are nearby.";
@@ -2966,7 +2966,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.14;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bybee.heeler;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.ricardofelixb.heeler;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -2984,7 +2984,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.14;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bybee.heeler.Widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.ricardofelixb.heeler.Widgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -3002,7 +3002,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.14;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bybee.heeler.NotificationService;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.ricardofelixb.heeler.NotificationService;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -3044,7 +3044,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = 9VM4RM39R3;
+				DEVELOPMENT_TEAM = 5XNKUB5FEE;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -3084,7 +3084,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bybee.heeler.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.ricardofelixb.heeler.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Heeler.app/Heeler";
@@ -3101,7 +3101,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bybee.heeler.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.ricardofelixb.heeler.tests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Heeler.app/Heeler";
@@ -3119,7 +3119,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEELER_SOURCE_REVISION = "";
 				INFOPLIST_FILE = Sources/Heeler/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Heeler;
+				INFOPLIST_KEY_CFBundleDisplayName = "Heeler Dev";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Heeler uses the camera to scan the Pairing Code shown on your computer, so you can add that machine without typing anything.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Heeler uses your local network to connect directly to Hosts on your Tailscale, ZeroTier, or EasyTier network when they are nearby.";
@@ -3134,7 +3134,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.14;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bybee.heeler;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.ricardofelixb.heeler;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -3152,7 +3152,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.14;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.bybee.heeler.NotificationService;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.ricardofelixb.heeler.NotificationService;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

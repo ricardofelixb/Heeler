@@ -679,7 +679,7 @@ cleanup() {
             fi
             if [[ "$preserve_password_fixture" != "1" ]] \
                 && ! sudo -n /usr/sbin/sysadminctl \
-                    -deleteUser "$password_username" -keepHome; then
+                    -deleteUser "$password_username"; then
                 preserve_password_fixture=1
                 if [[ "$status" -eq 0 ]]; then
                     status=1
@@ -1037,7 +1037,7 @@ unset env(HEELER_SYSADMINCTL_PASSWORD)
 
 spawn /usr/bin/sudo -n /usr/sbin/sysadminctl \
     -addUser $env(HEELER_SYSADMINCTL_USERNAME) \
-    -fullName {Heeler SSH CI} \
+    -fullName "Heeler SSH CI $env(HEELER_SYSADMINCTL_USERNAME)" \
     -UID $env(HEELER_SYSADMINCTL_UID) \
     -GID 20 \
     -shell /bin/zsh \

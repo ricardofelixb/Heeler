@@ -56,7 +56,7 @@ trap 'rm -rf "$work"' EXIT
 expected_full_lane_total=864
 expected_full_lane_skips=95
 expected_capture_executed=769
-expected_cases=66
+expected_cases=67
 
 # The lanes run-ci-ios-tests.sh writes, in the order it writes them. The capture
 # is the concatenation of exactly these, so splitting it on the xcodebuild
@@ -1206,7 +1206,7 @@ awk '/^create_password_user\(\) \($/ { in_function = 1 }
      inside { print }' "$gate_script" > "$sysadminctl_expect"
 [[ -s "$sysadminctl_expect" ]] \
     || die "no sysadminctl expect script inside create_password_user"
-perl -0pi -e 's/spawn \/usr\/bin\/sudo -n \/usr\/sbin\/sysadminctl \\\n(?:    [^\n]*\\\n)*    -password -\n/spawn \$env(HEELER_FAKE_SYSADMINCTL)\n/; s/^set timeout 30$/set timeout 5/m; s/^set completion_timeout 120$/set completion_timeout 8/m' \
+perl -0pi -e 's/spawn \/usr\/bin\/sudo -n \/usr\/sbin\/sysadminctl \\\n/spawn \$env(HEELER_FAKE_SYSADMINCTL) \\\n/; s/^set timeout 30$/set timeout 5/m; s/^set completion_timeout 120$/set completion_timeout 8/m' \
     "$sysadminctl_expect"
 # shellcheck disable=SC2016
 grep -qF 'spawn $env(HEELER_FAKE_SYSADMINCTL)' "$sysadminctl_expect" \
@@ -1216,10 +1216,12 @@ grep -qF 'set timeout 5' "$sysadminctl_expect" \
 grep -qF 'set completion_timeout 8' "$sysadminctl_expect" \
     || die "could not shorten the sysadminctl completion deadline in the lifted expect script"
 sysadminctl_transcript="$work/sysadminctl.log"
+sysadminctl_arguments="$work/sysadminctl-arguments.log"
 # Runs the lifted script against one stand-in; prints its output then STATUS=.
 run_sysadminctl_expect() {
     set +e
     HEELER_FAKE_SYSADMINCTL="$1" \
+    HEELER_FAKE_SYSADMINCTL_ARGS="$sysadminctl_arguments" \
     HEELER_SYSADMINCTL_LOG="$sysadminctl_transcript" \
     HEELER_SYSADMINCTL_PASSWORD="$fake_secret" \
     HEELER_SYSADMINCTL_USERNAME=heelerssh0 \
@@ -1249,7 +1251,7 @@ write_stand_in "$work/sysadminctl-hang-after-password.sh" \
     'printf "User password:"; read -r pw; echo "Creating user record"; sleep 30'
 # shellcheck disable=SC2016
 write_stand_in "$work/sysadminctl-ok.sh" \
-    'printf "User password:"; read -r pw; printf "\nread %s bytes\n" "${#pw}"; exit 0'
+    'printf "%s\n" "$@" > "$HEELER_FAKE_SYSADMINCTL_ARGS"; printf "User password:"; read -r pw; printf "\nread %s bytes\n" "${#pw}"; exit 0'
 
 rm -f "$sysadminctl_transcript"
 expect_output=$(run_sysadminctl_expect "$work/sysadminctl-exit7.sh")
@@ -1334,6 +1336,11 @@ else
 fi
 record_case "a successful sysadminctl never records the password" \
     "$reason" "$expect_status"
+
+reason=""
+grep -qxF 'Heeler SSH CI heelerssh0' "$sysadminctl_arguments" \
+    || reason="fixture display names must include their unique short username, not collide with another run"
+record_case "password account display names remain unique across persistent runs" "$reason" 0
 
 echo
 echo "== password SSH preflight diagnoses failures without relaxing deadlines =="

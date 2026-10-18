@@ -32,7 +32,7 @@ concurrency:
 jobs:
   diagnose:
     name: Diagnose ${{ matrix.target }}
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(vars.HEELER_IOS_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","macOS","ARM64","heeler-ios"]' || '["macos-26"]') }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -50,12 +50,20 @@ jobs:
       HEELER_XCODEBUILD_TEST_TIMEOUT_SECONDS: '1800'
     steps:
       - uses: actions/checkout@v5
+        env:
+          DEVELOPER_DIR: ${{ runner.environment == 'self-hosted' && '/Applications/Xcode.app/Contents/Developer' || '/Applications/Xcode_26.6.app/Contents/Developer' }}
       - uses: actions/setup-python@v6
+        if: runner.environment != 'self-hosted'
         with:
           python-version: '3.12'
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+      - name: Prepare isolated self-hosted resources
+        if: runner.environment == 'self-hosted'
+        env:
+          DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+        run: /bin/bash scripts/prepare-self-hosted-ios.sh
       - name: Verify SSH artifacts
         run: make verify-ssh-artifacts
       - name: Show toolchain

@@ -62,6 +62,13 @@ project is complete. `make check-test-membership`, which `make test-tools` and
 the merge gate run, fails when the committed HeelerTests target omits a Swift
 file under `Tests/HeelerTests` or the shared scheme skips tests.
 
+## Fork self-hosted iOS CI
+
+See [the self-hosted guide](../guides/self-hosted-ios-ci.md) for the opt-in runner,
+root-capable fixture policy, external-contributor approval boundary, dedicated
+Simulator and local SwiftPM sources. The native runner defaults to serial full
+coverage; evidence and skip requirements below stay unchanged.
+
 ## CI evidence constraints
 
 The merge gate records every registered method and parameterized argument case

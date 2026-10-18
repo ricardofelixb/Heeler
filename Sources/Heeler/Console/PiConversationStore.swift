@@ -15,6 +15,7 @@ final class PiConversationStore {
     private(set) var blocked: String?
     private(set) var isTruncated = false
     private(set) var sessionID: String?
+    private(set) var settings: PiConversationSettings?
     @ObservationIgnored private let open: Open
     @ObservationIgnored private let retryDelay: @Sendable (Int) async throws -> Void
     @ObservationIgnored private var session: PiConversationSession?
@@ -93,6 +94,13 @@ final class PiConversationStore {
         }
     }
 
+    /// Best effort: Pi answers with the settings it actually applied, and a
+    /// dropped link reconnects to a fresh snapshot.
+    func send(_ command: PiConversationCommand) {
+        guard let session else { return }
+        Task { try? await session.send(command) }
+    }
+
     func apply(_ frame: PiConversationFrame) throws {
         if frame.type == "heartbeat" { return }
         guard frame.version == 1, let incomingEpoch = frame.epoch,
@@ -111,6 +119,7 @@ final class PiConversationStore {
             isTruncated = frame.truncated ?? false
             isBusy = frame.busy ?? false
             blocked = frame.blocked
+            settings = frame.settings
             isConnected = true
             isUnavailable = false
         } else {
@@ -128,6 +137,8 @@ final class PiConversationStore {
             } else if frame.type == "status" {
                 isBusy = frame.busy ?? false
                 blocked = frame.blocked
+            } else if frame.type == "settings", let incoming = frame.settings {
+                settings = incoming
             }
         }
     }

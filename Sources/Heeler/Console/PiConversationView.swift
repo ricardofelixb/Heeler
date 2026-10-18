@@ -10,7 +10,11 @@ struct PiConversationView: View {
     /// Where the floating header ends, from the top of the screen's surface,
     /// which the transcript reaches by running under the status bar.
     let headerBottom: CGFloat
+    /// A drag or tap on the messages: the reader wants the screen back.
+    var onReading: () -> Void = {}
     @State private var followsLatest = true
+    @State private var transcriptBottom: CGFloat = 0
+    @State private var visibleBottom: CGFloat = 0
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @State private var scrollPhase = ScrollPhase.idle
     @State private var latestIsVisible = true
@@ -25,13 +29,18 @@ struct PiConversationView: View {
         // Stays mounted to keep observing while the terminal shows through.
         ZStack {
             if store.showsTranscript {
-                GeometryReader { proxy in
-                    transcript(composerHeight: proxy.safeAreaInsets.bottom)
-                }
-                .transition(.opacity)
+                // How far the transcript runs on beneath the Composer. Measured,
+                // not read from the safe area: with the system keyboard up that
+                // inset also counts the keyboard the screen has already lifted
+                // its content above, which left a keyboard-sized gap.
+                transcript(composerHeight: max(0, transcriptBottom - visibleBottom))
+                    .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: {
+            visibleBottom = $0
+        }
         .allowsHitTesting(store.showsTranscript)
         .animation(.easeInOut(duration: 0.15), value: store.showsTranscript)
         .task(id: ConnectionIdentity(active: isActive, generation: connectionGeneration)) {
@@ -78,6 +87,14 @@ struct PiConversationView: View {
         }
         .modifier(SystemScrollEdgeHidden())
         .background(palette.background)
+        // Inside the safe-area extension, so this sees where the transcript
+        // really ends rather than where it was laid out.
+        .background {
+            Color.clear
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: {
+                    transcriptBottom = $0
+                }
+        }
         .ignoresSafeArea(.container, edges: .vertical)
         .foregroundStyle(palette.foreground)
         .scrollDismissesKeyboard(.interactively)
@@ -89,8 +106,10 @@ struct PiConversationView: View {
         .overlay {
             if store.rows.isEmpty && !store.isConnected { ProgressView().tint(secondary) }
         }
+        .simultaneousGesture(TapGesture().onEnded { onReading() })
         .onScrollPhaseChange { previous, phase in
             scrollPhase = phase
+            if phase == .interacting { onReading() }
             if phase == .interacting || (phase == .idle && previous == .decelerating) {
                 followsLatest = latestIsVisible
             }
@@ -116,6 +135,10 @@ struct PiConversationView: View {
             scrollPosition.scrollTo(edge: .bottom)
         }
         .onChange(of: store.isBusy) {
+            if followsLatest { scrollPosition.scrollTo(edge: .bottom) }
+        }
+        // The keyboard settling moves the Composer, and with it the margin.
+        .onChange(of: composerHeight) {
             if followsLatest { scrollPosition.scrollTo(edge: .bottom) }
         }
         .onChange(of: store.sessionID) {

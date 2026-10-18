@@ -85,14 +85,14 @@ struct AgentDetailHeader: View {
 }
 
 /// The header while the transcript covers the terminal: Back, then one glass
-/// capsule naming the Agent, as in a chat. The capsule opens the screen's
-/// actions, so no icon row competes with the conversation.
+/// capsule naming the Agent, as in a chat. The capsule opens the Agent's
+/// sheet, so no icon row competes with the conversation.
 struct AgentConversationHeader: View {
     let palette: TerminalThemePalette
     let avatar: Image
     let name: String
     let onBack: (() -> Void)?
-    let actions: [AgentDetailHeaderAction]
+    let onOpen: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -100,11 +100,7 @@ struct AgentConversationHeader: View {
                 AgentDetailHeaderButton("Back", systemImage: "chevron.left", action: onBack)
                     .headerGlass(in: .circle)
             }
-            Menu {
-                ForEach(actions) { action in
-                    Button(action.title, systemImage: action.systemImage, action: action.perform)
-                }
-            } label: {
+            Button(action: onOpen) {
                 HStack(spacing: 8) {
                     avatar
                         .renderingMode(.original)

@@ -10,6 +10,50 @@ struct PiConversationRow: Codable, Sendable, Equatable, Identifiable {
     var state: String? = nil
 }
 
+/// The running Pi's model, thinking level, usage and slash commands.
+struct PiConversationSettings: Codable, Sendable, Equatable {
+    struct Model: Codable, Sendable, Equatable, Hashable {
+        let provider: String
+        let id: String
+        let name: String
+        var thinkingLevels: [String] = ["off"]
+    }
+    struct Usage: Codable, Sendable, Equatable {
+        var contextTokens: Int? = nil
+        var contextWindow: Int? = nil
+        var contextPercent: Double? = nil
+        var inputTokens: Int = 0
+        var outputTokens: Int = 0
+        var cacheTokens: Int = 0
+        var cost: Double = 0
+    }
+    struct Command: Codable, Sendable, Equatable {
+        let name: String
+        var description: String = ""
+    }
+    var model: Model? = nil
+    var thinking: String? = nil
+    var models: [Model] = []
+    var usage: Usage? = nil
+    var commands: [Command] = []
+}
+
+/// The only requests the phone sends: messages go through Pi's terminal.
+enum PiConversationCommand: Sendable, Equatable {
+    case setModel(provider: String, id: String)
+    case setThinking(String)
+
+    var line: Data {
+        let object: [String: String] = switch self {
+        case let .setModel(provider, id): ["type": "setModel", "provider": provider, "id": id]
+        case let .setThinking(level): ["type": "setThinking", "level": level]
+        }
+        var data = (try? JSONSerialization.data(withJSONObject: object, options: .sortedKeys)) ?? Data()
+        data.append(0x0A)
+        return data
+    }
+}
+
 struct PiConversationFrame: Codable, Sendable {
     let type: String
     var version: Int? = nil
@@ -21,11 +65,13 @@ struct PiConversationFrame: Codable, Sendable {
     var truncated: Bool? = nil
     var busy: Bool? = nil
     var blocked: String? = nil
+    var settings: PiConversationSettings? = nil
 }
 
-/// Read-only: input reaches Pi through its terminal, never through the mirror.
+/// Messages reach Pi through its terminal; the mirror only takes settings.
 struct PiConversationSession: Sendable {
     let events: AsyncThrowingStream<PiConversationFrame, any Error>
+    var send: @Sendable (PiConversationCommand) async throws -> Void = { _ in }
     let end: @Sendable () async -> Void
 }
 

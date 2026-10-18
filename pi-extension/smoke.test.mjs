@@ -31,7 +31,7 @@ class Inbox {
   }
 }
 
-test("real Pi core mirrors the running session read-only and restores it on reconnect", { timeout: 30_000 }, async (t) => {
+test("real Pi core mirrors the running session, takes only settings from the phone, and restores on reconnect", { timeout: 30_000 }, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "heeler-pi-smoke-"));
   const env = { ...process.env, PI_CODING_AGENT_DIR: join(directory, "agent"), PI_OFFLINE: "1",
     HERDR_SOCKET_PATH: "/tmp/heeler-smoke-herdr.sock", HERDR_PANE_ID: `smoke-${process.pid}` };
@@ -87,10 +87,13 @@ test("real Pi core mirrors the running session read-only and restores it on reco
   const final = await first.inbox.next((frame) => frame.type === "snapshot" && !frame.busy &&
     frame.rows.some((row) => row.role === "assistant"));
   assert.equal(final.rows.filter((row) => row.role === "user" && row.text === "Desktop prompt").length, 1);
-  // Read-only: anything the phone writes closes its own stream and never reaches Pi.
-  const closed = once(first.socket, "close");
+  assert.equal(first.snapshot.settings.model.id, "mock");
+  // Messages never come through the mirror; only model and thinking settings do.
   first.socket.write(`${JSON.stringify({ type: "prompt", id: "phone", text: "Ignored" })}\n`);
-  await closed;
+  first.socket.write(`${JSON.stringify({ type: "setModel", provider: "heeler-mock", id: "mock" })}\n`);
+  const settings = await first.inbox.next((frame) => frame.type === "settings");
+  assert.equal(settings.settings.model.id, "mock");
+  assert.deepEqual(settings.settings.model.thinkingLevels, ["off"]);
   const second = await phone();
   assert.deepEqual(second.snapshot.rows.map((row) => row.role), ["user", "assistant"]);
   const messages = await command("get_messages", "messages");

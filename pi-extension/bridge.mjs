@@ -18,6 +18,49 @@ const contentText = (content) => typeof content === "string" ? content :
   (content ?? []).map((part) => part.type === "text" ? part.text :
     part.type === "image" ? "[Image — open Terminal to view]" : "").filter(Boolean).join("\n");
 
+// Pi 1.3.0's built-in slash commands; extensions can't read Pi's own list.
+const BUILTIN_COMMANDS = [
+  ["model", "Select model"], ["thinking", "Set thinking level"], ["compact", "Manually compact the session context"],
+  ["new", "Start a new session"], ["resume", "Resume a different session"], ["reload", "Reload extensions, skills, prompts and context files"],
+  ["session", "Show session info and stats"], ["tree", "Navigate session tree"], ["fork", "Fork from a previous user message"],
+  ["clone", "Duplicate the current session"], ["name", "Set session display name"], ["copy", "Copy last agent message"],
+  ["export", "Export session"], ["share", "Share session"], ["scoped-models", "Enable/disable models for cycling"],
+  ["settings", "Open settings menu"], ["hotkeys", "Show keyboard shortcuts"], ["changelog", "Show changelog entries"],
+  ["login", "Configure provider authentication"], ["logout", "Remove provider authentication"], ["trust", "Save project trust decision"],
+  ["import", "Import a session from JSONL"], ["bug", "Report a bug"], ["quit", "Quit pi"],
+].map(([name, description]) => ({ name, description }));
+const MAX_COMMANDS = 300;
+const MAX_MODELS = 200;
+const MAX_COMMAND_BYTES = 4_096;
+
+// Mirrors pi-ai's getSupportedThinkingLevels, which extensions can't import.
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+export function thinkingLevels(model) {
+  if (!model?.reasoning) return ["off"];
+  return THINKING_LEVELS.filter((level) => {
+    const mapped = model.thinkingLevelMap?.[level];
+    if (mapped === null) return false;
+    return level === "xhigh" || level === "max" ? mapped !== undefined : true;
+  });
+}
+
+const modelInfo = (model) => model ? { provider: String(model.provider), id: String(model.id),
+  name: String(model.name || model.id), thinkingLevels: thinkingLevels(model) } : null;
+
+/** Token and cost totals for the session, from each assistant reply's reported usage. */
+export function sessionUsage(entries) {
+  const total = { inputTokens: 0, outputTokens: 0, cacheTokens: 0, cost: 0 };
+  for (const entry of entries) {
+    const usage = entry.type === "message" && entry.message.role === "assistant" ? entry.message.usage : undefined;
+    if (!usage) continue;
+    total.inputTokens += usage.input ?? 0;
+    total.outputTokens += usage.output ?? 0;
+    total.cacheTokens += (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+    total.cost += usage.cost?.total ?? 0;
+  }
+  return total;
+}
+
 // Must match PiConversationEndpoint in Swift. No remote shell interpolation.
 export function endpoint(home, herdrSocket, paneID) {
   const directory = `/tmp/heeler-pi-${hash(home).slice(0, 16)}`;
@@ -138,7 +181,7 @@ export class PiMirrorBridge {
     rows = rows.slice(-MAX_ROWS);
     const frame = { type: "snapshot", version: 1, epoch: this.epoch, revision: this.revision,
       sessionID: this.conversationID(), rows, truncated,
-      busy: !this.ctx.isIdle(), blocked: this.blocked ?? null };
+      busy: !this.ctx.isIdle(), blocked: this.blocked ?? null, settings: this.settings() };
     // Budget actual escaped bytes in one pass, retaining the most recent contiguous rows.
     let bytes = Buffer.byteLength(JSON.stringify({ ...frame, rows: [] }));
     let count = 0;
@@ -152,6 +195,48 @@ export class PiMirrorBridge {
       frame.truncated = true;
     }
     return frame;
+  }
+
+  /** The models the phone may pick: the session's scoped set, else every available one. */
+  models() {
+    const scoped = this.ctx.scopedModels ?? [];
+    const models = scoped.length ? scoped.map((entry) => entry.model) : (this.ctx.modelRegistry?.getAvailable?.() ?? []);
+    return models.slice(0, MAX_MODELS);
+  }
+
+  /** Model, thinking, usage and slash commands for the phone's native controls. */
+  settings() {
+    const api = this.options.api ?? {};
+    const context = this.ctx.getContextUsage?.();
+    // Skills already come from Heeler's own skills list.
+    const extra = (api.getCommands?.() ?? []).filter((command) => command.source !== "skill")
+      .map((command) => ({ name: String(command.name), description: String(command.description ?? "").slice(0, 200) }));
+    return {
+      model: modelInfo(this.ctx.model),
+      thinking: api.getThinkingLevel?.() ?? this.ctx.thinkingLevel ?? null,
+      models: this.models().map(modelInfo),
+      usage: { contextTokens: context?.tokens ?? null, contextWindow: context?.contextWindow ?? null,
+        contextPercent: context?.percent ?? null, ...sessionUsage(this.ctx.sessionManager.getEntries()) },
+      commands: [...BUILTIN_COMMANDS, ...extra].slice(0, MAX_COMMANDS),
+    };
+  }
+
+  /** Only model and thinking changes come from the phone; messages go through Pi's terminal. */
+  async command(command) {
+    if (!this.ctx) return;
+    const api = this.options.api ?? {};
+    try {
+      if (command?.type === "setModel") {
+        const model = this.models().find((entry) => entry.provider === command.provider && entry.id === command.id);
+        if (model) await api.setModel?.(model);
+      } else if (command?.type === "setThinking" && THINKING_LEVELS.includes(command.level)) {
+        api.setThinkingLevel?.(command.level);
+      } else {
+        return;
+      }
+    } catch {}
+    // Pi clamps unsupported levels; report what it actually applied.
+    this.broadcast({ type: "settings", settings: this.settings() });
   }
 
   write(socket, frame) {
@@ -199,6 +284,8 @@ export class PiMirrorBridge {
         this.flushTimer = undefined;
         if (this.live) this.broadcast({ type: "message", row: this.live });
       }, 80);
+    } else if (event.type === "model_select" || event.type === "thinking_level_select") {
+      this.broadcast({ type: "settings", settings: this.settings() });
     } else if (event.type === "ui_prompt_start") {
       this.blocked = clip(event.title || "Pi needs input in Terminal");
       this.broadcast({ type: "status", busy: !ctx.isIdle(), blocked: this.blocked });
@@ -222,13 +309,25 @@ export class PiMirrorBridge {
     }
   }
 
-  /** Read-only: input reaches Pi through its terminal, which handles busy steering natively. */
+  /** Messages reach Pi through its terminal, which handles busy steering natively. */
   connect(socket) {
     if (this.clients.size >= 4) { socket.destroy(); return; }
     this.clients.add(socket);
     socket.on("error", () => {});
     socket.on("close", () => this.clients.delete(socket));
-    socket.once("data", () => socket.destroy());
+    socket.setEncoding("utf8");
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += chunk;
+      for (let end = buffer.indexOf("\n"); end >= 0; end = buffer.indexOf("\n")) {
+        const line = buffer.slice(0, end);
+        buffer = buffer.slice(end + 1);
+        let command;
+        try { command = JSON.parse(line); } catch { socket.destroy(); return; }
+        void this.command(command);
+      }
+      if (Buffer.byteLength(buffer) > MAX_COMMAND_BYTES) socket.destroy();
+    });
     this.write(socket, this.snapshot());
   }
 

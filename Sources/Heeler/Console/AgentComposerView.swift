@@ -174,6 +174,8 @@ struct AgentComposerView: View {
     /// Drop is Composer-only. Defaults to Composer so existing call sites stay
     /// a drop target; Direct Input must pass `.direct` to keep this inert.
     var inputMode: AgentInputMode = .composer
+    /// The agent's own slash commands, suggested on `/` beside its skills.
+    var commands: [AgentSkill] = []
     @State private var isInputFocused = false
     /// An explicit dismissal hides suggestions for the current trigger token;
     /// removing the token arms them again.
@@ -204,6 +206,7 @@ struct AgentComposerView: View {
                         {
                             AgentComposerSkillSuggestions(
                                 skills: skills,
+                                commands: commands,
                                 trigger: trigger,
                                 onSelect: { skill in
                                     store.replaceTrailingToken(
@@ -399,7 +402,8 @@ struct AgentComposerView: View {
     private var suggestionTrigger: SkillSuggestionTrigger? {
         guard let skills else { return nil }
         return SkillSuggestionTrigger.detect(
-            draft: store.draft, prefixes: skills.triggerPrefixes)
+            draft: store.draft,
+            prefixes: skills.triggerPrefixes + (commands.isEmpty ? [] : ["/"]))
     }
 
     private var isKeyboardPresented: Bool {
@@ -504,6 +508,7 @@ struct AgentComposerView: View {
 /// happens to contain a prefix is not nagged.
 private struct AgentComposerSkillSuggestions: View {
     let skills: SkillsPaneStore
+    let commands: [AgentSkill]
     let trigger: SkillSuggestionTrigger
     let onSelect: (AgentSkill) -> Void
     let onDismiss: () -> Void
@@ -515,11 +520,16 @@ private struct AgentComposerSkillSuggestions: View {
     private static let maximumListHeight: CGFloat = 176
 
     var body: some View {
+        let commandMatches = trigger.matches(in: commands)
         switch skills.phase {
         case .idle, .loading:
-            header {
-                ProgressView()
-                    .controlSize(.small)
+            if commandMatches.isEmpty {
+                header {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            } else {
+                list(commandMatches)
             }
         case .failed(let message):
             VStack(alignment: .leading, spacing: 4) {
@@ -533,35 +543,39 @@ private struct AgentComposerSkillSuggestions: View {
                     .lineLimit(2)
             }
         case .loaded:
-            let matches = trigger.matches(in: skills.skills)
-            if !matches.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    header { EmptyView() }
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(matches) { skill in
-                                row(for: skill)
-                            }
-                        }
-                        .onGeometryChange(for: CGFloat.self) { proxy in
-                            proxy.size.height
-                        } action: { height in
-                            listHeight = height
+            list(commandMatches + trigger.matches(in: skills.skills))
+        }
+    }
+
+    @ViewBuilder
+    private func list(_ matches: [AgentSkill]) -> some View {
+        if !matches.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                header { EmptyView() }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(matches) { skill in
+                            row(for: skill)
                         }
                     }
-                    .frame(height: min(listHeight, Self.maximumListHeight))
-                    .scrollBounceBehavior(.basedOnSize)
-                    Divider()
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.height
+                    } action: { height in
+                        listHeight = height
+                    }
                 }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Skill Suggestions")
+                .frame(height: min(listHeight, Self.maximumListHeight))
+                .scrollBounceBehavior(.basedOnSize)
+                Divider()
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Skill Suggestions")
         }
     }
 
     private func header(@ViewBuilder trailing: () -> some View) -> some View {
         HStack(spacing: 8) {
-            Text("Skills")
+            Text(commands.isEmpty ? "Skills" : "Commands")
                 .font(.caption.weight(.semibold))
                 .textCase(.uppercase)
                 .foregroundStyle(.secondary)

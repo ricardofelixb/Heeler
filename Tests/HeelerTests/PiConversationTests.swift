@@ -44,6 +44,39 @@ struct PiConversationTests {
         #expect(PiConversationItem.grouped([]).isEmpty)
     }
 
+    @Test func settingsFollowSnapshotsAndSettingsFramesAndOldExtensionsClearThem() throws {
+        let data = Data("""
+        {"type":"snapshot","version":1,"epoch":"bridge","revision":0,"sessionID":"session","rows":[],"busy":false,"blocked":null,"settings":{"model":{"provider":"anthropic","id":"sonnet","name":"Sonnet","thinkingLevels":["off","low","high"]},"thinking":"low","models":[{"provider":"anthropic","id":"sonnet","name":"Sonnet","thinkingLevels":["off","low","high"]}],"usage":{"contextTokens":null,"contextWindow":200000,"contextPercent":null,"inputTokens":10,"outputTokens":5,"cacheTokens":0,"cost":0.25},"commands":[{"name":"compact","description":"Compact"}]}}
+        {"type":"settings","version":1,"epoch":"bridge","revision":1,"sessionID":"session","settings":{"model":null,"thinking":"high","models":[],"usage":null,"commands":[]}}
+
+        """.utf8)
+        var decoder = PiConversationDecoder()
+        let frames = try decoder.append(data)
+        let store = store()
+        try store.apply(frames[0])
+        #expect(store.settings?.model?.thinkingLevels == ["off", "low", "high"])
+        #expect(store.settings?.usage?.contextTokens == nil)
+        #expect(store.settings?.commands.map(\.name) == ["compact"])
+        try store.apply(frames[1])
+        #expect(store.settings?.thinking == "high")
+        try store.apply(snapshot(revision: 5))
+        #expect(store.settings == nil)
+    }
+
+    @Test func thePhoneSendsOnlySettingsCommandsAsSingleLines() throws {
+        for (command, expected) in [
+            (PiConversationCommand.setModel(provider: "openai", id: "gpt\nx"),
+             ["type": "setModel", "provider": "openai", "id": "gpt\nx"]),
+            (.setThinking("high"), ["type": "setThinking", "level": "high"]),
+        ] {
+            let line = command.line
+            #expect(line.last == 0x0A)
+            #expect(line.dropLast().firstIndex(of: 0x0A) == nil)
+            let object = try JSONSerialization.jsonObject(with: line.dropLast()) as? [String: String]
+            #expect(object == expected)
+        }
+    }
+
     @Test func endpointMatchesNodeAndKeepsOpaqueIDsOutOfThePath() {
         #expect(PiConversationEndpoint.socket(home: "/home/test", herdrSocket: "/tmp/herdr.sock", paneID: "opaque:pane")
                 == "/tmp/heeler-pi-928cd28cdeb14f38/2fac444f425c85ff601211138fa11f05.sock")

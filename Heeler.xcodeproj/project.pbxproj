@@ -233,6 +233,7 @@
 		640128C8D69F74ECF51FF452 /* DiffLayoutSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7C4030E0C3CCF493C11B0DE /* DiffLayoutSettingsTests.swift */; };
 		6460096A5B757E1D3B5A44F3 /* ChangesFreshnessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0081CF87748BCA49AA6AA0A2 /* ChangesFreshnessTests.swift */; };
 		669AB42912D20722F9C3CD66 /* ChangesGitExecGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C95D54E57FAA5D28C8899229 /* ChangesGitExecGateTests.swift */; };
+		6736A4206C6387A487E3E3A3 /* PiAgentSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0342165045255294B1514AD3 /* PiAgentSheet.swift */; };
 		67486EFA58929515182AD527 /* ChangesBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5100F5DD911C674B737B0C3C /* ChangesBadge.swift */; };
 		67D10ACCFB418C6351F34010 /* AgentRowLayoutResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16EE4454BBBF8D354C1360DF /* AgentRowLayoutResolver.swift */; };
 		67EA418D152219426F0DCD7A /* ChangesManualSleeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2594CA106FA6BF61036A50CF /* ChangesManualSleeper.swift */; };
@@ -648,6 +649,7 @@
 		016BA41A48C6D6CCCEB10A47 /* DeviceKeyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceKeyTests.swift; sourceTree = "<group>"; };
 		01BAEF1B2238CB51966E7862 /* GitProbeUntrackedDirectoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GitProbeUntrackedDirectoryTests.swift; sourceTree = "<group>"; };
 		029887EC83335A8AED8C8ABC /* AgentUsageStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUsageStrip.swift; sourceTree = "<group>"; };
+		0342165045255294B1514AD3 /* PiAgentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiAgentSheet.swift; sourceTree = "<group>"; };
 		0381E017F0669FCFD5D64A74 /* ChangesViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangesViewTests.swift; sourceTree = "<group>"; };
 		03E19BDF2824DC34B28A765C /* HostKeyPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostKeyPolicy.swift; sourceTree = "<group>"; };
 		0443F1688BCEC3474F278889 /* HostStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostStoreTests.swift; sourceTree = "<group>"; };
@@ -1734,6 +1736,7 @@
 				17631B548FA0C56DD5318D7A /* MessageJumpControl.swift */,
 				ADA42EBE95B7E6452127AD5C /* NewTerminalStore.swift */,
 				6CA18FC9DB67FF92D19A1C29 /* NewTerminalView.swift */,
+				0342165045255294B1514AD3 /* PiAgentSheet.swift */,
 				78B5673CB808005EB6F472B1 /* PiConversationStore.swift */,
 				0815DB5643CA1F4C761D9C38 /* PiConversationView.swift */,
 				B2437B1D6B97638031514C0F /* PinnedAgentsStore.swift */,
@@ -2495,6 +2498,7 @@
 				DB3815F790623647C0050290 /* PairingScanStore.swift in Sources */,
 				430EDF8111CC397CA9BD2008 /* PairingScanView.swift in Sources */,
 				D08663BD250210835FE7ED49 /* PhotosPickerImageSelection.swift in Sources */,
+				6736A4206C6387A487E3E3A3 /* PiAgentSheet.swift in Sources */,
 				71A5114FB901E877715F4E43 /* PiConversation.swift in Sources */,
 				085D1F15F67ECCB8766A57EE /* PiConversationSSHSession.swift in Sources */,
 				DE6FBE629FE744C7B6DCC4D8 /* PiConversationStore.swift in Sources */,

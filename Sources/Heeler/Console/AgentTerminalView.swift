@@ -278,6 +278,7 @@ struct AgentTerminalView: View {
     @AppStorage("agent.back-header-expanded") private var isBackHeaderExpanded = false
     /// The Workspace drawer's panel, while the back header's button owns it.
     @State private var isHeaderDrawerOpen = false
+    @State private var isAgentSheetPresented = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// This view's own window, for hosts without a scene root.
     @State private var mountedWindow = WindowReference()
@@ -1027,7 +1028,8 @@ struct AgentTerminalView: View {
                     palette: themePalette,
                     isActive: scenePhase == .active && isOnStage(),
                     connectionGeneration: console.hostConnectionGenerations[agent.hostID],
-                    headerBottom: backHeaderTop + AgentDetailHeader.controlSize)
+                    headerBottom: backHeaderTop + AgentDetailHeader.controlSize,
+                    onReading: dismissComposerKeyboard)
             }
         }
         // Above the floating buttons: the open panel covers them.
@@ -1115,7 +1117,7 @@ struct AgentTerminalView: View {
                         avatar: WorkspaceAgentPresentation.avatar(for: agent.id),
                         name: WorkspaceAgentPresentation.title(for: agent.agent),
                         onBack: showsBackButton ? { dismiss() } : nil,
-                        actions: backHeaderActions)
+                        onOpen: { isAgentSheetPresented = true })
                 } else {
                     AgentDetailHeader(
                         palette: themePalette,
@@ -1131,6 +1133,15 @@ struct AgentTerminalView: View {
             .padding(.top, backHeaderTop)
             .onChange(of: isBackHeaderExpanded || isTranscriptVisible) { _, hasHeader in
                 if !hasHeader { isHeaderDrawerOpen = false }
+            }
+        }
+        .sheet(isPresented: $isAgentSheetPresented) {
+            if let piConversation {
+                PiAgentSheet(
+                    store: piConversation,
+                    avatar: WorkspaceAgentPresentation.avatar(for: agent.id),
+                    name: WorkspaceAgentPresentation.title(for: agent.agent),
+                    actions: backHeaderActions)
             }
         }
         .onWindowControlsHeightChange { windowControlsHeight = $0 }
@@ -1194,10 +1205,14 @@ struct AgentTerminalView: View {
             actions.append(AgentDetailHeaderAction(
                 title: "Show Terminal", systemImage: "apple.terminal"
             ) { showsConversation = false })
-        } else if piConversation != nil, !showsConversation {
+        } else if piConversation != nil, !showsConversation || isDirectInput {
             actions.append(AgentDetailHeaderAction(
                 title: "Show Conversation", systemImage: "bubble.left.and.bubble.right"
-            ) { showsConversation = true })
+            ) {
+                // Conversation has no Direct Input; it brings the Composer back.
+                if isDirectInput { selectInputMode(.composer) }
+                showsConversation = true
+            })
         }
         if workspaceDrawer != nil {
             actions.append(AgentDetailHeaderAction(
@@ -1213,6 +1228,13 @@ struct AgentTerminalView: View {
                 title: "Changes", systemImage: "arrow.triangle.branch", perform: showChanges))
         }
         return actions
+    }
+
+    /// Puts away the system or Tools keyboard, leaving the Composer in place.
+    private func dismissComposerKeyboard() {
+        guard composerKeyboardPresentation != .hidden else { return }
+        prepareComposerKeyboardPresentation(.hidden)
+        composerKeyboardPresentation = .hidden
     }
 
     private func prepareComposerKeyboardPresentation(
@@ -1308,7 +1330,9 @@ struct AgentTerminalView: View {
             skills: skills,
             keyboardPresentation: $composerKeyboardPresentation,
             prepareKeyboardPresentation: prepareComposerKeyboardPresentation,
-            modeControl: composerModeControl,
+            // Direct Input types into the terminal, which Conversation
+            // covers; its Tools keys still reach Pi's dialogs.
+            modeControl: piConversation != nil && showsConversation ? nil : composerModeControl,
             keyboardHandoffID: directToComposerHandoffID,
             isKeyboardHandoffCurrent: { id in
                 isOnStage()
@@ -1316,7 +1340,19 @@ struct AgentTerminalView: View {
                     && directToComposerHandoffID == id
             },
             onFirstResponderRequest: composerFirstResponderRequest,
-            onKeyboardHandoffSettled: composerKeyboardHandoffSettled)
+            onKeyboardHandoffSettled: composerKeyboardHandoffSettled,
+            commands: piCommands)
+    }
+
+    /// Pi's built-in and extension commands, as the mirror last reported them.
+    private var piCommands: [AgentSkill] {
+        var seen = Set<String>()
+        return (piConversation?.settings?.commands ?? []).compactMap { command in
+            guard seen.insert(command.name).inserted else { return nil }
+            return AgentSkill(
+                scope: .global, name: command.name,
+                description: command.description.isEmpty ? nil : command.description)
+        }
     }
 
     /// Attached to the control itself: a popover on the whole detail anchors

@@ -14,6 +14,11 @@ Entries reference the pull request that made the change.
   same-pane Terminal fallback. Requires the opt-in `pi-extension` on macOS/Linux;
   other agents keep their terminal interface. (#1)
 
+- Personal fork preview: the Pi conversation's friend capsule opens a sheet to
+  switch the model and thinking level and see context, token, and cost usage;
+  typing `/` suggests Pi's own and extension commands; scrolling or tapping the
+  messages puts the keyboard away. (#1)
+
 - Personal fork preview: a quieter By Workspace agent list with stable friend
   avatars, task-first titles, and compact status labels. New installations start
   By Workspace; saved presentation choices are preserved. (#1)

@@ -5,7 +5,7 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createConnection } from "node:net";
 import { join } from "node:path";
-import { PiMirrorBridge, endpoint, conversationRows } from "./bridge.mjs";
+import { PiMirrorBridge, endpoint, conversationRows, sessionUsage, thinkingLevels } from "./bridge.mjs";
 
 async function fixture(t) {
   const home = await mkdtemp(join(tmpdir(), "heeler-pi-test-"));
@@ -14,9 +14,20 @@ async function fixture(t) {
   let sessionID = "session-a";
   let idle = true;
   let branch = [{ type: "message", id: "u1", message: { role: "user", content: "Hello" } }];
-  const ctx = { isIdle: () => idle, abort: () => { aborted += 1; },
-    sessionManager: { getBranch: () => branch, getSessionId: () => sessionID } };
-  const bridge = new PiMirrorBridge({ env, home, heartbeatMs: 20 });
+  const sonnet = { provider: "anthropic", id: "sonnet", name: "Sonnet", reasoning: true };
+  const mini = { provider: "openai", id: "mini", name: "Mini", reasoning: false };
+  let thinking = "medium";
+  const ctx = { isIdle: () => idle, abort: () => { aborted += 1; }, model: sonnet,
+    scopedModels: [{ model: sonnet }, { model: mini }],
+    getContextUsage: () => ({ tokens: 5_000, contextWindow: 200_000, percent: 2.5 }),
+    sessionManager: { getBranch: () => branch, getEntries: () => branch, getSessionId: () => sessionID } };
+  const api = {
+    getCommands: () => [{ name: "live", description: "Talk", source: "extension" }, { name: "skill:x", source: "skill" }],
+    setModel: async (model) => { ctx.model = model; return true; },
+    getThinkingLevel: () => thinking,
+    setThinkingLevel: (level) => { thinking = level; },
+  };
+  const bridge = new PiMirrorBridge({ env, home, heartbeatMs: 20, api });
   await bridge.start(ctx);
   const address = endpoint(home, env.HERDR_SOCKET_PATH, env.HERDR_PANE_ID);
   t.after(async () => { await bridge.stop(); await rm(address.directory, { recursive: true, force: true });
@@ -76,12 +87,51 @@ test("heartbeats keep idle clients alive without advancing revisions", options, 
   assert.equal(status.blocked, "Approve in Terminal");
 });
 
-test("the mirror is read-only: client input closes only that client and never aborts Pi", options, async (t) => {
+test("snapshots carry model, thinking, usage and non-skill commands", options, async (t) => {
+  const f = await fixture(t); const a = await f.client();
+  const { settings } = await a.next();
+  assert.deepEqual(settings.model, { provider: "anthropic", id: "sonnet", name: "Sonnet",
+    thinkingLevels: ["off", "minimal", "low", "medium", "high"] });
+  assert.equal(settings.thinking, "medium");
+  assert.deepEqual(settings.models.map((model) => model.id), ["sonnet", "mini"]);
+  assert.equal(settings.usage.contextPercent, 2.5);
+  assert.ok(settings.commands.some((command) => command.name === "compact"));
+  assert.ok(settings.commands.some((command) => command.name === "live"));
+  assert.ok(!settings.commands.some((command) => command.name === "skill:x"));
+});
+
+test("the phone can switch model and thinking, but nothing else", options, async (t) => {
+  const f = await fixture(t); const a = await f.client(); await a.next();
+  a.socket.write(`${JSON.stringify({ type: "setModel", provider: "openai", id: "mini" })}\n`);
+  assert.equal((await a.next()).settings.model.id, "mini");
+  a.socket.write(`${JSON.stringify({ type: "setModel", provider: "evil", id: "unscoped" })}\n`);
+  a.socket.write(`${JSON.stringify({ type: "stop" })}\n`);
+  a.socket.write(`${JSON.stringify({ type: "setThinking", level: "high" })}\n`);
+  const settings = (await a.next()).settings;
+  assert.equal(settings.model.id, "mini");
+  assert.equal((await a.next()).settings.thinking, "high");
+  assert.equal(f.aborted(), 0);
+});
+
+test("malformed or oversized phone input closes only that client and never aborts Pi", options, async (t) => {
   const f = await fixture(t); const a = await f.client(); await a.next();
   const closed = once(a.socket, "close");
-  a.socket.write(`${JSON.stringify({ id: "x", type: "stop" })}\n`); await closed;
-  const b = await f.client(); assert.equal((await b.next()).type, "snapshot");
-  b.socket.destroy(); await f.bridge.stop(); assert.equal(f.aborted(), 0);
+  a.socket.write("not json\n"); await closed;
+  const b = await f.client(); await b.next();
+  const oversized = once(b.socket, "close");
+  b.socket.write("x".repeat(5_000)); await oversized;
+  const c = await f.client(); assert.equal((await c.next()).type, "snapshot");
+  c.socket.destroy(); await f.bridge.stop(); assert.equal(f.aborted(), 0);
+});
+
+test("thinking levels and usage follow pi-ai's rules", () => {
+  assert.deepEqual(thinkingLevels({ reasoning: false }), ["off"]);
+  assert.deepEqual(thinkingLevels({ reasoning: true, thinkingLevelMap: { minimal: null, xhigh: "xhigh" } }),
+    ["off", "low", "medium", "high", "xhigh"]);
+  assert.deepEqual(sessionUsage([
+    { type: "message", message: { role: "assistant", usage: { input: 10, output: 5, cacheRead: 2, cacheWrite: 1, cost: { total: 0.5 } } } },
+    { type: "message", message: { role: "user", content: "x" } },
+  ]), { inputTokens: 10, outputTokens: 5, cacheTokens: 3, cost: 0.5 });
 });
 
 test("desktop tree navigation replaces the transcript even within the same session file", options, async (t) => {

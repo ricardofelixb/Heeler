@@ -31,6 +31,7 @@ enum PiConversationSSHSession {
         continuation.onTermination = { _ in reader.cancel() }
         return PiConversationSession(
             events: events,
+            send: { command in try await channel.write(command.line, timeout: .seconds(5)) },
             end: {
                 reader.cancel()
                 try? await channel.close(timeout: .seconds(2))

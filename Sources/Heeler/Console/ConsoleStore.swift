@@ -185,10 +185,25 @@ final class ConsoleStore {
             // behind that chain sits any suspend() the user triggers by
             // leaving again — including the didFinishSuspending() that
             // releases the background assertion.
-            await withTaskGroup(of: Void.self) { group in
-                for projection in projections {
-                    group.addTask { await projection.revalidate() }
-                }
+            await Self.revalidate(projections)
+        }
+    }
+
+    /// The device changed networks: re-prove every Host now instead of when
+    /// a keepalive next notices, up to a minute later. A Host stopped on a
+    /// non-retryable failure gets its one more attempt, as on a foreground
+    /// return. Nothing to do while suspended.
+    func networkPathDidChange() async {
+        await enqueueLifecycleTransition { [self] in
+            guard isActive else { return }
+            await Self.revalidate(Array(projections.values))
+        }
+    }
+
+    private static func revalidate(_ projections: [HostConsoleProjection]) async {
+        await withTaskGroup(of: Void.self) { group in
+            for projection in projections {
+                group.addTask { await projection.revalidate() }
             }
         }
     }

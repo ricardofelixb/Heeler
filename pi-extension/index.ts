@@ -3,7 +3,7 @@ import { PiMirrorBridge } from "./bridge.mjs";
 
 /** Opt-in companion for Heeler. Uses the already-running TUI's session. */
 export default function (pi: ExtensionAPI) {
-  const bridge = new PiMirrorBridge(pi);
+  const bridge = new PiMirrorBridge();
   pi.on("session_start", async (_event, ctx) => {
     try { await bridge.start(ctx); }
     catch (error) { ctx.ui.notify(`Heeler mirror: ${String(error)}`, "error"); }

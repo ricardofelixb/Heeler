@@ -21,21 +21,11 @@ struct PiConversationFrame: Codable, Sendable {
     var truncated: Bool? = nil
     var busy: Bool? = nil
     var blocked: String? = nil
-    var id: String? = nil
-    var error: String? = nil
 }
 
-struct PiConversationCommand: Codable, Sendable {
-    let id: String
-    let sessionID: String
-    let epoch: String
-    let type: String
-    var text: String? = nil
-}
-
+/// Read-only: input reaches Pi through its terminal, never through the mirror.
 struct PiConversationSession: Sendable {
     let events: AsyncThrowingStream<PiConversationFrame, any Error>
-    let send: @Sendable (PiConversationCommand) async throws -> Void
     let end: @Sendable () async -> Void
 }
 
@@ -60,7 +50,7 @@ struct PiConversationDecoder {
             let line = buffer[..<end]
             guard line.count <= Self.maximumBytes else { throw Self.invalidStream }
             let frame = try JSONDecoder().decode(PiConversationFrame.self, from: line)
-            if frame.type != "ack", frame.version != 1 { throw Self.invalidStream }
+            if frame.version != 1 { throw Self.invalidStream }
             frames.append(frame)
             buffer.removeSubrange(...end)
         }

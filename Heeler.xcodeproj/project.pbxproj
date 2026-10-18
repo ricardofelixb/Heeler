@@ -496,6 +496,7 @@
 		D6FBEC56A26E35A32CF2417A /* TerminalKeyModifiersTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B99CB61015DC220A2D9306A /* TerminalKeyModifiersTests.swift */; };
 		D72DB8602458FB38733BFBB7 /* FileDiffLayoutViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED1F486D6B44C92C51C34A6 /* FileDiffLayoutViewTests.swift */; };
 		D73584678535141CBBB2FCB7 /* ChangesStore+FileDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 153C35138F25F70F35B2E1A0 /* ChangesStore+FileDiff.swift */; };
+		D779FB9517E7BA95EC1DFDBF /* NetworkPathDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F086562925B3A7FB1B268C5 /* NetworkPathDriver.swift */; };
 		D7DD62B232DBA9CE8C89AFDD /* NotificationKeyMirrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D55C5296892657D59171DFE /* NotificationKeyMirrorTests.swift */; };
 		D7E0DBBBC8229F24218C8958 /* TerminalRetentionBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ED55B6D7C29BC534BC116FE /* TerminalRetentionBudget.swift */; };
 		D85DF4883A9FAB5402292872 /* AgentChangesPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 695171EFF8AE3C1736E77625 /* AgentChangesPresentation.swift */; };
@@ -678,6 +679,7 @@
 		0E38A3F2A443D311C8FCC218 /* NotificationConfigFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationConfigFile.swift; sourceTree = "<group>"; };
 		0E7D152A663A30A0CDA92640 /* FileDiffListChangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDiffListChangeTests.swift; sourceTree = "<group>"; };
 		0F0729017FD662311E56B376 /* TerminalFullKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFullKeyboard.swift; sourceTree = "<group>"; };
+		0F086562925B3A7FB1B268C5 /* NetworkPathDriver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkPathDriver.swift; sourceTree = "<group>"; };
 		0F7065C3BE109D2F52AE3BC2 /* HerdrAPITypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HerdrAPITypes.swift; sourceTree = "<group>"; };
 		0F868101495226A8BE768AC9 /* SidebarLayoutVectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarLayoutVectorTests.swift; sourceTree = "<group>"; };
 		107722DE7ECD0406951E6B74 /* ConsoleHostSectionHeaderPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleHostSectionHeaderPresentationTests.swift; sourceTree = "<group>"; };
@@ -1858,6 +1860,7 @@
 				5433C446084E3B43749C61B7 /* ChipWrap.swift */,
 				46D647D9C68850D06947E7E5 /* CommandBlock.swift */,
 				46F7218F35AFEB5DCDF8BAF5 /* ConsoleActivityDriver.swift */,
+				0F086562925B3A7FB1B268C5 /* NetworkPathDriver.swift */,
 				BA34B35B5CAE41E2AAC2DF75 /* ReadableColumn.swift */,
 				085125625EA4A6D291517AEE /* WindowInteractionRecognizer.swift */,
 				D36183A0ED703C88B9D16031 /* WindowReader.swift */,
@@ -2460,6 +2463,7 @@
 				5299E363C0B099498E45E78A /* LiveActivityPreferences.swift in Sources */,
 				2CCF49CE1A3D34AEC4D53469 /* LiveInAnotherWindowPresentation.swift in Sources */,
 				DA5142568B326156F88E557D /* MessageJumpControl.swift in Sources */,
+				D779FB9517E7BA95EC1DFDBF /* NetworkPathDriver.swift in Sources */,
 				F43752764BAE282519A42DF0 /* NewTerminalStore.swift in Sources */,
 				30D6475F160DC39FA807C98A /* NewTerminalView.swift in Sources */,
 				359A3FA92C332BEC1DA1982C /* NotificationConfigFile.swift in Sources */,

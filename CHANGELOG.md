@@ -29,10 +29,14 @@ Entries reference the pull request that made the change.
 
 ### Fixed
 
-- Personal fork preview: the Pi keyboard's Send arrow submits instead of
-  inserting a newline, busy messages use Pi's native steering, tools collapse
-  into one expandable row per reply, and conversation history opens at the latest
-  message without lazy-layout jumps.
+- Personal fork preview: Pi Conversation is a transcript over the live
+  terminal on the normal Agent screen, using the same composer, so slash
+  commands, attachments, dialogs and busy steering all work; a header button
+  switches between transcript and terminal instantly. Tools collapse into one
+  row per reply and history opens at the latest message.
+- Personal fork preview: connections heal on their own. Pi Conversation keeps
+  retrying and detects stalled streams, a dropped terminal channel reconnects
+  without Reattach, and changing networks re-checks every Host at once.
 
 - Closing a connection through a Tailscale network no longer risks shutting
   down an unrelated connection that reused its file descriptor. Tailscale

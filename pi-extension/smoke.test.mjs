@@ -31,7 +31,7 @@ class Inbox {
   }
 }
 
-test("real Pi core mirrors both directions, reconnects, and deduplicates phone prompts", { timeout: 30_000 }, async (t) => {
+test("real Pi core mirrors the running session read-only and restores it on reconnect", { timeout: 30_000 }, async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "heeler-pi-smoke-"));
   const env = { ...process.env, PI_CODING_AGENT_DIR: join(directory, "agent"), PI_OFFLINE: "1",
     HERDR_SOCKET_PATH: "/tmp/heeler-smoke-herdr.sock", HERDR_PANE_ID: `smoke-${process.pid}` };
@@ -83,23 +83,17 @@ test("real Pi core mirrors both directions, reconnects, and deduplicates phone p
     return { socket, inbox, snapshot: await inbox.next((frame) => frame.type === "snapshot") };
   }
   const first = await phone();
-  const prompt = { type: "prompt", id: "phone-message", epoch: first.snapshot.epoch,
-    sessionID: first.snapshot.sessionID, text: "Phone prompt" };
-  first.socket.write(`${JSON.stringify(prompt)}\n`);
-  assert.equal((await first.inbox.next((frame) => frame.type === "ack")).error, undefined);
-  const phoneFinal = await first.inbox.next((frame) => frame.type === "snapshot" &&
-    !frame.busy && frame.rows.some((row) => row.role === "assistant"));
-  assert.equal(phoneFinal.rows.filter((row) => row.role === "user" && row.text === "Phone prompt").length, 1);
-  first.socket.destroy();
+  await command("prompt", "desktop", { message: "Desktop prompt" });
+  const final = await first.inbox.next((frame) => frame.type === "snapshot" && !frame.busy &&
+    frame.rows.some((row) => row.role === "assistant"));
+  assert.equal(final.rows.filter((row) => row.role === "user" && row.text === "Desktop prompt").length, 1);
+  // Read-only: anything the phone writes closes its own stream and never reaches Pi.
+  const closed = once(first.socket, "close");
+  first.socket.write(`${JSON.stringify({ type: "prompt", id: "phone", text: "Ignored" })}\n`);
+  await closed;
   const second = await phone();
-  assert.equal(second.snapshot.rows.filter((row) => row.text === "Phone prompt").length, 1);
-  second.socket.write(`${JSON.stringify(prompt)}\n`);
-  await second.inbox.next((frame) => frame.type === "ack");
+  assert.deepEqual(second.snapshot.rows.map((row) => row.role), ["user", "assistant"]);
   const messages = await command("get_messages", "messages");
   assert.equal(messages.data.messages.filter((message) => message.role === "user").length, 1);
-  await command("prompt", "desktop", { message: "Desktop prompt" });
-  const desktopFinal = await second.inbox.next((frame) => frame.type === "snapshot" && !frame.busy &&
-    frame.rows.some((row) => row.role === "user" && row.text === "Desktop prompt"));
-  assert.equal(desktopFinal.rows.filter((row) => row.role === "user").length, 2);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 1);
 });

@@ -10,19 +10,18 @@ import { PiMirrorBridge, endpoint, conversationRows } from "./bridge.mjs";
 async function fixture(t) {
   const home = await mkdtemp(join(tmpdir(), "heeler-pi-test-"));
   const env = { HERDR_SOCKET_PATH: "/tmp/test-herdr.sock", HERDR_PANE_ID: "opaque:pane/1" };
-  const prompts = [];
   let aborted = 0;
   let sessionID = "session-a";
   let idle = true;
   let branch = [{ type: "message", id: "u1", message: { role: "user", content: "Hello" } }];
   const ctx = { isIdle: () => idle, abort: () => { aborted += 1; },
     sessionManager: { getBranch: () => branch, getSessionId: () => sessionID } };
-  const bridge = new PiMirrorBridge({ sendUserMessage: (...args) => prompts.push(args) }, { env, home });
+  const bridge = new PiMirrorBridge({ env, home, heartbeatMs: 20 });
   await bridge.start(ctx);
   const address = endpoint(home, env.HERDR_SOCKET_PATH, env.HERDR_PANE_ID);
   t.after(async () => { await bridge.stop(); await rm(address.directory, { recursive: true, force: true });
     await rm(home, { recursive: true, force: true }); });
-  async function client() {
+  async function client({ heartbeats = false } = {}) {
     const socket = createConnection(address.socket);
     let buffer = "";
     const frames = [];
@@ -32,6 +31,7 @@ async function fixture(t) {
       let end;
       while ((end = buffer.indexOf("\n")) >= 0) {
         const frame = JSON.parse(buffer.slice(0, end)); buffer = buffer.slice(end + 1);
+        if (frame.type === "heartbeat" && !heartbeats) continue;
         if (waiters.length) waiters.shift()(frame); else frames.push(frame);
       }
     });
@@ -39,10 +39,9 @@ async function fixture(t) {
     socket.on("error", () => {});
     await once(socket, "connect");
     t.after(() => socket.destroy());
-    return { socket, next, write: (command) => socket.write(`${JSON.stringify(command)}\n`),
-      command: (type, extra = {}) => ({ id: "request-1", epoch: bridge.epoch, sessionID: bridge.conversationID(), type, ...extra }) };
+    return { socket, next };
   }
-  return { bridge, ctx, client, prompts, address, aborted: () => aborted,
+  return { bridge, ctx, client, address, aborted: () => aborted,
     setBranch: (value) => { branch = value; }, setSession: (value) => { sessionID = value; },
     setIdle: (value) => { idle = value; } };
 }
@@ -66,46 +65,30 @@ test("private socket supplies an authoritative branch to multiple clients", opti
   }
 });
 
-test("lost acknowledgment retry after reconnect submits exactly one prompt", options, async (t) => {
-  const f = await fixture(t); const a = await f.client(); await a.next();
-  const command = a.command("prompt", { text: "Continue" });
-  a.write(command); assert.equal((await a.next()).type, "ack");
-  a.socket.destroy();
-  const b = await f.client(); await b.next(); b.write(command);
-  assert.equal((await b.next()).error, undefined);
-  assert.deepEqual(f.prompts, [["Continue", { deliverAs: "steer" }]]);
-});
-
-test("busy messages use Pi's native steering exactly once, not follow-up delivery", options, async (t) => {
-  const f = await fixture(t);
-  f.setIdle(false);
-  const a = await f.client();
-  assert.equal((await a.next()).busy, true);
-  const command = a.command("prompt", { text: "Change direction now" });
-  a.write(command);
-  assert.deepEqual(await a.next(), { type: "ack", id: command.id });
-  a.write(command);
-  assert.deepEqual(await a.next(), { type: "ack", id: command.id });
-  assert.deepEqual(f.prompts, [["Change direction now", { deliverAs: "steer" }]]);
-});
-
-test("stale session, stale bridge, reused ID, slash commands, and UI blocking reject", options, async (t) => {
-  const f = await fixture(t); const a = await f.client(); await a.next();
-  for (const extra of [{ sessionID: "other" }, { epoch: "old" }, { text: "/live" }]) {
-    a.write(a.command("prompt", { text: "No", ...extra })); assert.ok((await a.next()).error);
-  }
-  a.write(a.command("prompt", { text: "Yes" })); await a.next();
-  a.write(a.command("prompt", { text: "Changed" })); assert.ok((await a.next()).error);
+test("heartbeats keep idle clients alive without advancing revisions", options, async (t) => {
+  const f = await fixture(t); const a = await f.client({ heartbeats: true });
+  const snapshot = await a.next();
+  assert.deepEqual(await a.next(), { type: "heartbeat", version: 1 });
   f.bridge.event({ type: "ui_prompt_start", title: "Approve in Terminal" }, f.ctx);
-  assert.equal((await a.next()).blocked, "Approve in Terminal");
-  a.write(a.command("prompt", { id: "request-2", text: "No" })); assert.ok((await a.next()).error);
-  assert.equal(f.prompts.length, 1);
+  let status = await a.next();
+  while (status.type === "heartbeat") status = await a.next();
+  assert.equal(status.revision, snapshot.revision + 1);
+  assert.equal(status.blocked, "Approve in Terminal");
 });
 
-test("stop is deduplicated and disconnect does not abort Pi", options, async (t) => {
+test("the mirror is read-only: client input closes only that client and never aborts Pi", options, async (t) => {
   const f = await fixture(t); const a = await f.client(); await a.next();
-  const stop = a.command("stop"); a.write(stop); await a.next(); a.write(stop); await a.next();
-  assert.equal(f.aborted(), 1); a.socket.destroy(); await f.bridge.stop(); assert.equal(f.aborted(), 1);
+  const closed = once(a.socket, "close");
+  a.socket.write(`${JSON.stringify({ id: "x", type: "stop" })}\n`); await closed;
+  const b = await f.client(); assert.equal((await b.next()).type, "snapshot");
+  b.socket.destroy(); await f.bridge.stop(); assert.equal(f.aborted(), 0);
+});
+
+test("desktop tree navigation replaces the transcript even within the same session file", options, async (t) => {
+  const f = await fixture(t); const a = await f.client(); const before = await a.next();
+  f.bridge.event({ type: "session_tree" }, f.ctx);
+  const snapshot = await a.next();
+  assert.equal(snapshot.type, "snapshot"); assert.notEqual(snapshot.sessionID, before.sessionID);
 });
 
 test("message_end waits for Pi persistence before publishing stable IDs", options, async (t) => {
@@ -139,13 +122,6 @@ test("history combines tool calls/results, excludes thinking, and bounds text/ro
   assert.equal(large.rows.length, 120); assert.equal(large.truncated, true); assert.ok(large.rows[0].text.length < 6_100);
 });
 
-test("malformed or oversized commands close only that client", options, async (t) => {
-  const f = await fixture(t); const a = await f.client(); await a.next();
-  const closed = once(a.socket, "close"); a.socket.write("x".repeat(65_537)); await closed;
-  const b = await f.client(); assert.equal((await b.next()).type, "snapshot");
-  b.write(b.command("prompt", { text: "Still works" })); await b.next(); assert.equal(f.prompts.length, 1);
-});
-
 test("snapshot fits its serialized budget even with heavily escaped text", options, async (t) => {
   const f = await fixture(t);
   f.setBranch(Array.from({ length: 120 }, (_, index) => ({ type: "message", id: String(index),
@@ -156,16 +132,8 @@ test("snapshot fits its serialized budget even with heavily escaped text", optio
   assert.equal(snapshot.rows.at(-1).id, "119");
 });
 
-test("desktop tree navigation invalidates commands even within the same session file", options, async (t) => {
-  const f = await fixture(t); const a = await f.client(); await a.next();
-  const old = a.command("prompt", { text: "Old branch" });
-  f.bridge.event({ type: "session_tree" }, f.ctx); const snapshot = await a.next();
-  assert.notEqual(snapshot.sessionID, old.sessionID);
-  a.write(old); assert.ok((await a.next()).error); assert.equal(f.prompts.length, 0);
-});
-
 test("an active socket is never replaced by another mirror", options, async (t) => {
   const f = await fixture(t);
-  const other = new PiMirrorBridge({}, f.bridge.options);
+  const other = new PiMirrorBridge(f.bridge.options);
   await assert.rejects(other.start(f.ctx), /already active/);
 });

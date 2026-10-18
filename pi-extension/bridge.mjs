@@ -6,6 +6,8 @@ import { join } from "node:path";
 
 const hash = (text) => createHash("sha256").update(text).digest("hex");
 export const MAX_LINE_BYTES = 1_048_576;
+// Heeler treats 45 s of silence as a stalled channel and reconnects.
+export const HEARTBEAT_MS = 15_000;
 const MAX_TEXT = 6_000;
 const MAX_ROWS = 120;
 const clip = (text) => {
@@ -59,12 +61,10 @@ export function conversationRows(entries) {
 
 /** Runs inside the existing Pi process. A lost phone never owns agent lifetime. */
 export class PiMirrorBridge {
-  constructor(pi, options = {}) {
-    this.pi = pi;
+  constructor(options = {}) {
     this.options = options;
     this.epoch = randomUUID();
     this.clients = new Set();
-    this.receipts = new Map();
     this.revision = 0;
     this.branchRevision = 0;
     this.toolRows = new Map();
@@ -112,6 +112,10 @@ export class PiMirrorBridge {
       });
       await chmod(address.socket, 0o600);
       server.on("error", () => { for (const client of this.clients) client.destroy(); });
+      this.heartbeat = setInterval(() => {
+        for (const client of this.clients) this.write(client, { type: "heartbeat", version: 1 });
+      }, this.options.heartbeatMs ?? HEARTBEAT_MS);
+      this.heartbeat.unref();
     } catch (error) {
       this.server = undefined;
       server.close();
@@ -218,65 +222,18 @@ export class PiMirrorBridge {
     }
   }
 
+  /** Read-only: input reaches Pi through its terminal, which handles busy steering natively. */
   connect(socket) {
     if (this.clients.size >= 4) { socket.destroy(); return; }
     this.clients.add(socket);
     socket.on("error", () => {});
     socket.on("close", () => this.clients.delete(socket));
+    socket.once("data", () => socket.destroy());
     this.write(socket, this.snapshot());
-    let pending = Buffer.alloc(0);
-    let chain = Promise.resolve();
-    socket.on("data", (data) => {
-      pending = Buffer.concat([pending, data]);
-      if (pending.length > 65_536) { socket.destroy(); return; }
-      let newline;
-      while ((newline = pending.indexOf(10)) >= 0) {
-        const line = pending.subarray(0, newline).toString("utf8");
-        pending = pending.subarray(newline + 1);
-        let command;
-        try { command = JSON.parse(line); } catch { socket.destroy(); return; }
-        chain = chain.then(() => this.command(socket, command)).catch(() => socket.destroy());
-      }
-    });
-  }
-
-  async command(socket, command) {
-    const { id, sessionID, epoch, type, text } = command ?? {};
-    if (typeof id !== "string" || id.length > 80) { socket.destroy(); return; }
-    const reject = (error) => this.write(socket, { type: "ack", id, error });
-    if (epoch !== this.epoch || sessionID !== this.conversationID()) {
-      reject("Pi session changed. Review the conversation before sending again."); return;
-    }
-    const fingerprint = hash(JSON.stringify({ sessionID, type, text }));
-    const previous = this.receipts.get(id);
-    if (previous) {
-      if (previous.fingerprint !== fingerprint) reject("Command ID was reused with different content.");
-      else this.write(socket, previous.ack);
-      return;
-    }
-    if (type !== "prompt" && type !== "stop") { reject("Unsupported command. Use Terminal."); return; }
-    if (type === "prompt" && (typeof text !== "string" || !text.trim() || text.length > 16_000)) {
-      reject("Message must contain 1–16000 characters."); return;
-    }
-    if (type === "prompt" && text.trimStart().startsWith("/")) {
-      reject("Use Terminal for slash commands in this first version."); return;
-    }
-    if (type === "prompt" && this.blocked) { reject("Pi needs input in Terminal first."); return; }
-    // Never evict accepted IDs: delayed retries must not execute a second time.
-    if (this.receipts.size >= 10_000) { reject("Reload the Pi mirror to accept more commands."); return; }
-    const ack = { type: "ack", id };
-    this.receipts.set(id, { fingerprint, ack });
-    try {
-      if (type === "stop") this.ctx.abort();
-      else {
-        // Void ExtensionAPI schedules a user message. Ack means submitted, not model completion.
-        this.pi.sendUserMessage(text, { deliverAs: "steer" });
-      }
-    } catch (error) { ack.error = String(error.message ?? error); }
-    this.write(socket, ack);
   }
 
   async stop() {
+    clearInterval(this.heartbeat);
     clearImmediate(this.refreshImmediate);
     clearTimeout(this.flushTimer);
     this.flushTimer = undefined;

@@ -19,22 +19,24 @@ user-owned Unix socket. The app reaches it through direct-streamlocal on the
 existing authenticated SSH Transport. Socket discovery hashes the user's home,
 herdr socket, and opaque pane ID; it uses no shell interpolation or network listener.
 
-Pi panes open a native Conversation with text, expandable tools, composer, and
-Stop. The same-pane Terminal remains available for slash commands, attachments,
-and custom extension dialogs. Other agents remain terminal-based. The app never
-starts a new agent or changes desktop focus just to display the native view.
+The mirror is **read-only**. On a Pi pane's normal Agent screen, a transcript
+(text, tools grouped per reply) covers the live terminal; a header toggle chooses
+which one to read. The screen's own Composer, tools keyboard and Direct Input stay
+the only input path, typing into Pi's terminal, so slash commands, attachments,
+dialogs and Pi's native busy steering all behave as on the desktop. While Pi shows
+a dialog or the mirror is down, the terminal shows through. Other agents remain
+terminal-based. The app never starts a new agent or changes desktop focus.
 
-Pi remains authoritative for credentials, tools, history, execution and lifetime.
-The app owns presentation and a local draft; a connection holds only a forwarding
-channel. Snapshot plus versioned/revisioned pushed updates supports reconnect and
-branch reconciliation without terminal parsing or optimistic transcript duplication.
-Snapshots run after message persistence and replace temporary streaming identities.
+Pi remains authoritative for credentials, tools, history, execution and lifetime;
+a connection holds only a forwarding channel. Snapshot plus versioned/revisioned
+pushed updates supports reconnect and branch reconciliation without terminal
+parsing. Snapshots run after message persistence and replace temporary streaming
+identities. A 15-second heartbeat lets the app detect a stalled channel.
 
-A command receipt means submitted to Pi's extension API, not model acceptance or
-completion. Retries retain their ID only within the same bridge epoch and
-conversation token. Pi restarts/reloads/session switches/tree navigation invalidate
-unconfirmed requests rather than risking duplicate execution. Unsent/unconfirmed
-text stays available for review. No cross-process exactly-once claim is made.
+Amended 2026-10-18: the first preview had its own composer, Stop and an
+acknowledged prompt protocol. Two input paths drifted (no attachments, slash
+commands or dialogs; follow-up rather than steering), so the mirror lost its
+write path in favor of the existing Composer.
 
 ## Consequences
 
@@ -48,6 +50,8 @@ text stays available for review. No cross-process exactly-once claim is made.
 - Bounded native history/tool previews protect a mobile stream; full source
   history remains in Pi. Images, thinking, custom UI, and rich Markdown blocks
   aren't replicated in this version. The native UI indicates truncation.
+- Native dialog controls would need Pi to expose a dialog's choices; until then
+  the live terminal answers them.
 - User-owned 0700 directory/0600 socket and the SSH login are the trust boundary.
   Same-OS-user processes are trusted, as with the session files themselves.
 - [ADR 0012](0012-monitor-non-realtime-agent-surface.md) and

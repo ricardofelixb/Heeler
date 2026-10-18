@@ -204,6 +204,10 @@ struct AgentTerminalView: View {
     /// Edge-docked Workspace navigation; nil where the detail cannot route
     /// to other terminals.
     private let workspaceDrawer: WorkspaceTerminalDrawer?
+    /// Pi's transcript over the live terminal, a reading preference only:
+    /// input always goes through this screen's composer and keys.
+    private let piConversation: PiConversationStore?
+    @Binding private var showsConversation: Bool
     /// Follows the Agent's own session file for the usage strip (#325).
     @State private var sessionUsage = AgentSessionUsageStore()
     @State private var attach: AgentAttachStore
@@ -259,6 +263,7 @@ struct AgentTerminalView: View {
     @State private var attachLinksOrigin: AttachLinksOrigin?
     @State private var closeErrorMessage: String?
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -319,8 +324,12 @@ struct AgentTerminalView: View {
         onRetainDeparture: ((_ keepingKeyboard: Bool) -> Void)? = nil,
         workspaceDrawer: WorkspaceTerminalDrawer? = nil,
         inheritsKeyboardHandoff: Bool = true,
-        interactionProbe: AgentTerminalInteractionProbe? = nil
+        interactionProbe: AgentTerminalInteractionProbe? = nil,
+        piConversation: PiConversationStore? = nil,
+        showsConversation: Binding<Bool> = .constant(false)
     ) {
+        self.piConversation = piConversation
+        _showsConversation = showsConversation
         self.agent = agent
         self.console = console
         self.terminal = terminal
@@ -1009,6 +1018,17 @@ struct AgentTerminalView: View {
         .overlay(alignment: .bottomTrailing) {
             attachLinksChrome
         }
+        // Over the terminal's own scroll controls, under the drawer and
+        // status. Direct Input types into the visible terminal, so it shows.
+        .overlay {
+            if let piConversation, showsConversation, !isDirectInput {
+                PiConversationView(
+                    store: piConversation,
+                    palette: themePalette,
+                    isActive: scenePhase == .active && isOnStage(),
+                    connectionGeneration: console.hostConnectionGenerations[agent.hostID])
+            }
+        }
         // Above the floating buttons: the open panel covers them.
         .overlay {
             if let workspaceDrawer {
@@ -1145,6 +1165,12 @@ struct AgentTerminalView: View {
     /// where this screen can offer it.
     private var backHeaderActions: [AgentDetailHeaderAction] {
         var actions: [AgentDetailHeaderAction] = []
+        if piConversation != nil {
+            actions.append(AgentDetailHeaderAction(
+                title: showsConversation ? "Show Terminal" : "Show Conversation",
+                systemImage: showsConversation ? "apple.terminal" : "bubble.left.and.bubble.right"
+            ) { showsConversation.toggle() })
+        }
         if workspaceDrawer != nil {
             actions.append(AgentDetailHeaderAction(
                 title: "Workspace Terminals", systemImage: "terminal"

@@ -180,6 +180,7 @@ final class HeelerAppModel {
                 afterResume: { await overlayNetworks.resumeBrowserSignInAfterActivation() }
             ).run()
         }
+        Task { await NetworkPathDriver(console: console).run() }
         Task { await pushRegistration.refresh() }
         // Existing installs' Notification Keys predate the app-group
         // mirror; refresh it before a locked widget render needs it.

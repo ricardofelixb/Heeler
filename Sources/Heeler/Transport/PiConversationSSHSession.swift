@@ -3,6 +3,10 @@ import HeelerSSH
 
 /// SSH types stop at this boundary; the observable store only sees protocol frames.
 enum PiConversationSSHSession {
+    /// The bridge sends a heartbeat every 15 seconds, so this much silence
+    /// means a stalled channel, not an idle Pi.
+    static let silenceLimit: Duration = .seconds(45)
+
     static func open(channel: SSHStreamLocalChannel, lease: SSHChannelAdmissionLease) -> PiConversationSession {
         let (events, continuation) = AsyncThrowingStream<PiConversationFrame, any Error>.makeStream(
             bufferingPolicy: .bufferingOldest(256))
@@ -10,13 +14,7 @@ enum PiConversationSSHSession {
             do {
                 var decoder = PiConversationDecoder()
                 while !Task.isCancelled {
-                    let chunk: Data?
-                    do {
-                        chunk = try await channel.read(timeout: .seconds(60))
-                    } catch SSHError.timedOut {
-                        continue // An idle conversation isn't a failed connection.
-                    }
-                    guard let chunk else { break }
+                    guard let chunk = try await channel.read(timeout: silenceLimit) else { break }
                     for frame in try decoder.append(chunk) {
                         if case .dropped = continuation.yield(frame) {
                             throw PiConversationDecoder.invalidStream
@@ -33,11 +31,6 @@ enum PiConversationSSHSession {
         continuation.onTermination = { _ in reader.cancel() }
         return PiConversationSession(
             events: events,
-            send: { command in
-                var data = try JSONEncoder().encode(command)
-                data.append(0x0A)
-                try await channel.write(data, timeout: .seconds(15))
-            },
             end: {
                 reader.cancel()
                 try? await channel.close(timeout: .seconds(2))

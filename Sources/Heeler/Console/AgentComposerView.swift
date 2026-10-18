@@ -384,6 +384,11 @@ struct AgentComposerView: View {
                 setKeyboardPresentation(.hidden)
             }
         }
+        // The screen can put the keyboard away (a tap on the transcript);
+        // let go of the text too, so the next tap into it asks again.
+        .onChange(of: keyboardPresentation) { _, presentation in
+            if presentation == .hidden, isInputFocused { isInputFocused = false }
+        }
         .onChange(of: store.draft) { _, _ in
             guard let skills else { return }
             if suggestionTrigger == nil {

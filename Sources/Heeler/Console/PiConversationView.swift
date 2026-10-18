@@ -68,9 +68,6 @@ struct PiConversationView: View {
                     case .tools(let id, let rows): tools(id: id, rows: rows)
                     }
                 }
-                if store.isBusy {
-                    ProgressView().tint(secondary).accessibilityLabel("Pi is working")
-                }
             }
             .padding(.horizontal, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -82,8 +79,16 @@ struct PiConversationView: View {
                 .frame(height: headerBottom + 48)
         }
         .overlay(alignment: .bottom) {
-            PiEdgeFade(edge: .bottom, color: palette.background)
-                .frame(height: composerHeight + 48)
+            // Solid under the whole Composer, its status line included, so
+            // messages fade out above it rather than behind its text.
+            VStack(spacing: 0) {
+                PiEdgeFade(edge: .bottom, color: palette.background)
+                    .frame(height: 48)
+                palette.background
+                    .frame(height: composerHeight)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
         .modifier(SystemScrollEdgeHidden())
         .background(palette.background)
@@ -104,7 +109,9 @@ struct PiConversationView: View {
         // The keyboard coming up shrinks the transcript; keep its end in view.
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .overlay {
-            if store.rows.isEmpty && !store.isConnected { ProgressView().tint(secondary) }
+            if store.rows.isEmpty && !store.isConnected {
+                Text("Connecting…").font(.footnote).foregroundStyle(secondary)
+            }
         }
         .simultaneousGesture(TapGesture().onEnded { onReading() })
         .onScrollPhaseChange { previous, phase in
@@ -165,9 +172,8 @@ struct PiConversationView: View {
             .padding(.top, 12)
         } label: {
             HStack(spacing: 8) {
-                if rows.contains(where: { $0.state == "running" }) {
-                    ProgressView().controlSize(.mini).tint(secondary)
-                } else {
+                // Running tools need no spinner: the status line says Working.
+                if !rows.contains(where: { $0.state == "running" }) {
                     Image(systemName: rows.contains(where: { $0.state == "error" })
                           ? "exclamationmark.circle" : "checkmark")
                 }

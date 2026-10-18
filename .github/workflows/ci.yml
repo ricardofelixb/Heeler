@@ -118,16 +118,18 @@ jobs:
   app-tests:
     if: ${{ inputs.diagnostic_target == '' || inputs.diagnostic_target == 'none' }}
     name: ${{ inputs.diagnostic_target != '' && inputs.diagnostic_target != 'none' && 'Diagnostic mode (app coverage not run)' || format('App tests ({0})', matrix.shard) }}
-    # macos-26 ships Xcode 26.x and the iOS 26 simulator runtimes. Pinned
-    # rather than macos-latest for reproducibility.
-    runs-on: macos-26
+    # Opt-in on this fork; external fork PRs stay hosted. The repository also
+    # requires approval for ALL external contributors: these guards aren't a sandbox.
+    runs-on: ${{ fromJSON(vars.HEELER_IOS_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","macOS","ARM64","heeler-ios"]' || '["macos-26"]') }}
     # The job limit leaves the setup and upload steps room around the test step.
-    timeout-minutes: ${{ inputs.layout == 'serial' && 50 || 44 }}
+    timeout-minutes: ${{ matrix.shard == 'all' && 50 || 44 }}
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(inputs.layout == 'serial' && '["all"]' || '["session-weak","transport","ordinary"]') }}
+        # One app build on the 8 GB runner; manual sharding remains available.
+        shard: ${{ fromJSON((inputs.layout == 'serial' || (inputs.layout == '' && vars.HEELER_IOS_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository))) && '["all"]' || '["session-weak","transport","ordinary"]') }}
     env:
+      # Native preparation overrides these through GITHUB_ENV before Xcode runs.
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       HEELER_CI_EVIDENCE_DIR: ${{ github.workspace }}/.ci/test-evidence/app-${{ matrix.shard }}
       HEELER_CI_OVERLAP_BUILD: ${{ inputs.layout == 'serial' && '0' || '1' }}
@@ -146,10 +148,17 @@ jobs:
         with:
           node-version: 24
 
+      - name: Prepare isolated self-hosted resources
+        if: runner.environment == 'self-hosted'
+        env:
+          DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+          CACHE_MODE: ${{ inputs.cache_mode || 'warm' }}
+        run: /bin/bash scripts/prepare-self-hosted-ios.sh
+
       # Cache dependency sources, never compiled test products or results.
       # Cold benchmarks skip the entire action, including its post-run save.
       - name: Cache SwiftPM checkouts
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.cache_mode == 'warm' }}
+        if: ${{ runner.environment != 'self-hosted' && (github.event_name != 'workflow_dispatch' || inputs.cache_mode == 'warm') }}
         uses: actions/cache@v4
         with:
           path: |
@@ -181,7 +190,7 @@ jobs:
           APP_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p "$HEELER_CI_EVIDENCE_DIR"
-          if [[ "$CACHE_MODE" == cold && -e .ci/source-packages ]]; then
+          if [[ "$CACHE_MODE" == cold && -n "$(ls -A "${HEELER_CI_SOURCE_PACKAGES_DIR:-.ci/source-packages}" 2>/dev/null)" ]]; then
             echo 'Cold run unexpectedly contains restored dependency sources.' >&2
             exit 1
           fi
@@ -204,7 +213,7 @@ jobs:
       # and a hung second suite's 10-minute watchdog with sampling and cleanup.
       # Serial runs every phase once and has its own wider limit.
       - name: Build and test
-        timeout-minutes: ${{ inputs.layout == 'serial' && 45 || 40 }}
+        timeout-minutes: ${{ matrix.shard == 'all' && 45 || 40 }}
         # The fixture runs unprivileged; HEELER_CI_MANDATORY makes the one
         # privileged part (the real-password sshd) a hard requirement here
         # rather than something merge CI may quietly run without.
@@ -243,7 +252,7 @@ jobs:
   heelerssh-package-e2e:
     if: ${{ inputs.diagnostic_target == '' || inputs.diagnostic_target == 'none' }}
     name: ${{ inputs.diagnostic_target != '' && inputs.diagnostic_target != 'none' && 'Diagnostic mode (package coverage not run)' || 'HeelerSSH package E2E (iOS Simulator)' }}
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(vars.HEELER_IOS_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && '["self-hosted","macOS","ARM64","heeler-ios"]' || '["macos-26"]') }}
     timeout-minutes: 36
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
@@ -256,6 +265,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+
+      - name: Prepare isolated self-hosted resources
+        if: runner.environment == 'self-hosted'
+        env:
+          DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+        run: /bin/bash scripts/prepare-self-hosted-ios.sh
 
       # Same rationale as the app job: avoid a critical-path CoreSimulator
       # cold-start; package-lane boot overlaps with build-for-testing.
@@ -360,7 +375,7 @@ jobs:
         run: make check-test-membership
       - name: Verify complete test coverage
         env:
-          LAYOUT: ${{ inputs.layout || 'sharded' }}
+          LAYOUT: ${{ inputs.layout || (vars.HEELER_IOS_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'serial' || 'sharded') }}
           BASELINE_RUN: ${{ inputs.baseline_run }}
         run: |
           arguments=(verify --evidence-dir .ci/evidence --sha "$GITHUB_SHA" --layout "$LAYOUT" --require-package)

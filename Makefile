@@ -104,6 +104,7 @@ test-tools: check-agent-docs check-test-membership ## Test agent tooling without
 	python3 scripts/test-run-app-simulator-tests.py
 	python3 scripts/test-simulator-ui.py
 	python3 scripts/test-isolated-herdr-backend.py
+	python3 scripts/test-self-hosted-ios.py
 	sh scripts/test-source-revision.sh
 	$(MAKE) test-ci-evidence
 	$(MAKE) test-weak-network-proxy

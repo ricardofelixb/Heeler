@@ -1,6 +1,8 @@
 import Foundation
 import Observation
+import SwiftUI
 import Testing
+import UIKit
 @testable import Heeler
 
 @MainActor
@@ -14,6 +16,65 @@ struct PiConversationTests {
                           rows: [PiConversationRow] = []) -> PiConversationFrame {
         .init(type: "snapshot", version: 1, epoch: epoch, revision: revision,
               sessionID: session, rows: rows, busy: false)
+    }
+
+    @Test func keyboardSendSubmitsWithoutInsertingANewlineAndKeepsPastedParagraphs() {
+        var edits: [String] = []
+        var submissions = 0
+        let coordinator = AgentComposerTextEditor.Coordinator(
+            onEdit: { text, _ in edits.append(text) }, isFocused: .constant(true),
+            onSubmit: { submissions += 1 })
+        let editor = UITextView()
+        editor.text = "Send from the keyboard"
+        let end = NSRange(location: (editor.text as NSString).length, length: 0)
+        #expect(!coordinator.textView(editor, shouldChangeTextIn: end, replacementText: "\n"))
+        #expect(edits == ["Send from the keyboard"])
+        #expect(submissions == 1)
+        #expect(editor.text == "Send from the keyboard")
+        #expect(coordinator.textView(editor, shouldChangeTextIn: end, replacementText: "First\nSecond"))
+        #expect(submissions == 1)
+    }
+
+    @Test func terminalEditorAndIMEConfirmationDoNotTriggerSend() throws {
+        var submissions = 0
+        let coordinator = AgentComposerTextEditor.Coordinator(
+            onEdit: { _, _ in }, isFocused: .constant(true))
+        let editor = UITextView()
+        #expect(coordinator.textView(editor, shouldChangeTextIn: .init(location: 0, length: 0),
+                                    replacementText: "\n"))
+        coordinator.onSubmit = { submissions += 1 }
+        editor.setMarkedText("候補", selectedRange: .init(location: 2, length: 0))
+        _ = try #require(editor.markedTextRange)
+        #expect(coordinator.textView(editor, shouldChangeTextIn: .init(location: 0, length: 0),
+                                    replacementText: "\n"))
+        #expect(submissions == 0)
+    }
+
+    @Test func toolsAcrossCommentaryCollapseOncePerUserReply() {
+        let user = PiConversationRow(id: "user", role: "user", text: "Change this")
+        let first = PiConversationRow(id: "tool1", role: "tool", text: "read", state: "done")
+        let commentary = PiConversationRow(id: "commentary", role: "assistant", text: "Found it")
+        let second = PiConversationRow(id: "tool2", role: "tool", text: "edit", state: "running")
+        let reply = PiConversationRow(id: "reply", role: "assistant", text: "Done")
+        let next = PiConversationRow(id: "next", role: "user", text: "Again")
+        let third = PiConversationRow(id: "tool3", role: "tool", text: "bash", state: "error")
+        #expect(PiConversationItem.grouped([user, first, commentary, second, reply, next, third]) == [
+            .message(user), .tools(id: first.id, rows: [first, second]),
+            .message(commentary), .message(reply), .message(next), .tools(id: third.id, rows: [third])
+        ])
+    }
+
+    @Test func truncatedToolHistoryAndStreamingUpdatesKeepStableGroupIdentity() {
+        let first = PiConversationRow(id: "tool1", role: "tool", text: "read", state: "running")
+        let second = PiConversationRow(id: "tool2", role: "tool", text: "bash", state: "running")
+        let before = PiConversationItem.grouped([first])
+        var finished = first
+        finished.state = "done"
+        finished.detail = "Finished output"
+        let after = PiConversationItem.grouped([finished, second])
+        #expect(before.map(\.id) == after.map(\.id))
+        #expect(after == [.tools(id: first.id, rows: [finished, second])])
+        #expect(PiConversationItem.grouped([]).isEmpty)
     }
 
     @Test func endpointMatchesNodeAndKeepsOpaqueIDsOutOfThePath() {
@@ -110,6 +171,27 @@ struct PiConversationTests {
         await observer.value
         await bridge.waitForClose()
         #expect(await bridge.closedCount == 1)
+    }
+
+    @Test func busyPiStillAcceptsTypedFollowUpsExactlyOnce() async throws {
+        let bridge = PiConversationTestBridge()
+        let store = PiConversationStore { await bridge.open() }
+        let observer = Task { await store.observe() }
+        defer { observer.cancel() }
+        try await waitUntil("initial Pi snapshot") { store.isConnected }
+        try store.apply(.init(type: "status", version: 1, epoch: "bridge", revision: 1,
+                              sessionID: "session", busy: true))
+        store.draft = "Follow up while working"
+        #expect(store.canSend)
+        await store.sendPrompt()
+        #expect(!store.canSend)
+        #expect(await bridge.commands.count == 1)
+        let command = try #require(await bridge.commands.first)
+        #expect(command.text == "Follow up while working")
+        await bridge.emit(.init(type: "ack", id: command.id))
+        try await waitUntil("accepted follow-up clears draft") { store.draft.isEmpty }
+        #expect(store.pending == nil)
+        #expect(store.rows.isEmpty) // Acceptance isn't an invented transcript message.
     }
 
     @Test func reconnectRetriesUnconfirmedDeliveryWithTheSameIDOnly() async throws {

@@ -18,7 +18,7 @@ final class PiConversationStore {
     @ObservationIgnored private var session: PiConversationSession?
     @ObservationIgnored private var connectionID = UUID()
     @ObservationIgnored private var epoch: String?
-    @ObservationIgnored private var sessionID: String?
+    private(set) var sessionID: String?
     @ObservationIgnored private var revision: UInt64 = 0
     @ObservationIgnored private var observers: [UUID: CheckedContinuation<Void, Never>] = [:]
     @ObservationIgnored private var worker: Task<Void, Never>?

@@ -29,6 +29,10 @@ Entries reference the pull request that made the change.
 
 ### Fixed
 
+- Personal fork preview: the Pi keyboard's Send arrow submits instead of
+  inserting a newline, tools collapse into one expandable row per reply, and
+  conversation history opens at the latest message without lazy-layout jumps.
+
 - Closing a connection through a Tailscale network no longer risks shutting
   down an unrelated connection that reused its file descriptor. Tailscale
   networks now run libtailscale 0.2.0 with Tailscale v1.104.1. (#463)

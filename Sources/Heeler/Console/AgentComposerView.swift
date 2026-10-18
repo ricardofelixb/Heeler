@@ -645,7 +645,7 @@ private struct AgentComposerSendButtonStyle: ButtonStyle {
     }
 }
 
-private struct AgentComposerTextEditor: UIViewRepresentable {
+struct AgentComposerTextEditor: UIViewRepresentable {
     let text: String
     let selectedRange: NSRange
     let onEdit: (String, NSRange) -> Void
@@ -655,9 +655,10 @@ private struct AgentComposerTextEditor: UIViewRepresentable {
     let isKeyboardHandoffCurrent: (UUID) -> Bool
     let onFirstResponderRequest: (UUID, Bool) -> Void
     let onKeyboardHandoffSettled: (UUID) -> Void
+    var onSubmit: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onEdit: onEdit, isFocused: $isFocused)
+        Coordinator(onEdit: onEdit, isFocused: $isFocused, onSubmit: onSubmit)
     }
 
     func makeUIView(context: Context) -> AgentComposerUITextView {
@@ -669,12 +670,15 @@ private struct AgentComposerTextEditor: UIViewRepresentable {
         textView.textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
         textView.textContainer.lineFragmentPadding = 0
         textView.accessibilityLabel = "Message the Agent"
+        textView.returnKeyType = onSubmit == nil ? .default : .send
         textView.onKeyboardHandoffSettled = onKeyboardHandoffSettled
         return textView
     }
 
     func updateUIView(_ textView: AgentComposerUITextView, context: Context) {
         context.coordinator.onEdit = onEdit
+        context.coordinator.onSubmit = onSubmit
+        textView.returnKeyType = onSubmit == nil ? .default : .send
         if textView.text != text {
             textView.text = text
         }
@@ -744,10 +748,24 @@ private struct AgentComposerTextEditor: UIViewRepresentable {
         /// deferred focus change can recheck it before acting.
         var wantsFocus = false
         private var isFocused: Binding<Bool>
+        var onSubmit: (() -> Void)?
 
-        init(onEdit: @escaping (String, NSRange) -> Void, isFocused: Binding<Bool>) {
+        init(onEdit: @escaping (String, NSRange) -> Void, isFocused: Binding<Bool>,
+             onSubmit: (() -> Void)? = nil) {
             self.onEdit = onEdit
             self.isFocused = isFocused
+            self.onSubmit = onSubmit
+        }
+
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange,
+                      replacementText text: String) -> Bool {
+            guard text == "\n", textView.markedTextRange == nil, let onSubmit else { return true }
+            // A multiline SwiftUI TextField ignores onSubmit and inserts a
+            // newline even when its keyboard shows Send. Handle the key here;
+            // pasted multiline text and the terminal's editor remain unchanged.
+            onEdit(textView.text, textView.selectedRange)
+            onSubmit()
+            return false
         }
 
         func textViewDidChange(_ textView: UITextView) {

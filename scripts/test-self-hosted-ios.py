@@ -64,6 +64,16 @@ class SelfHostedIOSTests(unittest.TestCase):
         for forbidden in ("simctl erase", "simctl shutdown", "simctl delete", "killall"):
             self.assertNotIn(forbidden, helper)
 
+    def test_native_jobs_do_not_run_the_hosted_python_installer(self):
+        for source, expected in ((CI, 2), (DIAGNOSTICS, 1)):
+            native_preparations = source.split("      - name: Prepare isolated self-hosted resources")[:-1]
+            self.assertEqual(len(native_preparations), expected)
+            for before in native_preparations:
+                python_step = before.rsplit("      - uses: actions/setup-python@v6", 1)[1]
+                self.assertIn("if: runner.environment != 'self-hosted'", python_step)
+        helper = (ROOT / "scripts/prepare-self-hosted-ios.sh").read_text()
+        self.assertIn("sys.version_info >= (3, 12)", helper)
+
     def policy(self, *arguments):
         return subprocess.run(["/bin/bash", str(ROOT / "scripts/install-self-hosted-ios-sudoers.sh"),
                                "--print", *arguments], text=True, capture_output=True)

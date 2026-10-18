@@ -24,7 +24,10 @@ changes and executable code before approving external contributions. No
 ## Machine setup
 
 - macOS/Apple Silicon, Xcode 26.x at `/Applications/Xcode.app`, an available iOS 26
-  runtime, Node and Python. Workflows provision Node 24/Python 3.12 as before.
+  runtime, Node and Python >= 3.12 on the runner's captured PATH (currently Python
+  3.13.12). Workflows provision Node 24; hosted jobs provision Python 3.12. Native
+  jobs validate the existing Python instead: GitHub's macOS Python archives assume
+  `/Users/runner` and cannot be installed unchanged under Ricardo's account.
 - Install the official [GitHub runner](https://github.com/actions/runner/releases)
   for `osx-arm64`, verifying its published SHA256 digest. Register with this
   repository only, name `heeler-mac-mini-arm64`, custom label `heeler-ios` and the

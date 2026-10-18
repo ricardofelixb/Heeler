@@ -142,6 +142,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
+        if: runner.environment != 'self-hosted'
         with:
           python-version: '3.12'
       - uses: actions/setup-node@v5
@@ -263,6 +264,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
+        if: runner.environment != 'self-hosted'
         with:
           python-version: '3.12'
 

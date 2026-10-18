@@ -14,6 +14,9 @@ if ! /usr/bin/sudo -n /usr/bin/true; then
     echo "Install the explicitly approved CI fixture sudoers policy; see docs/guides/self-hosted-ios-ci.md." >&2
     exit 1
 fi
+# setup-python's macOS archives assume /Users/runner. Use this machine's Python
+# instead; never grant CI access to a fabricated hosted-runner directory.
+python3 -c 'import sys; assert sys.version_info >= (3, 12), "Install Python >= 3.12 on the runner PATH"; print("Native Python:", sys.version.split()[0], sys.executable)'
 xcode_version="$(xcodebuild -version)"
 printf '%s\n' "$xcode_version"
 [[ "$xcode_version" == 'Xcode 26.'* ]] || { echo 'Expected Xcode 26.x' >&2; exit 1; }

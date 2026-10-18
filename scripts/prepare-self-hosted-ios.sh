@@ -14,8 +14,9 @@ if ! /usr/bin/sudo -n /usr/bin/true; then
     echo "Install the explicitly approved CI fixture sudoers policy; see docs/guides/self-hosted-ios-ci.md." >&2
     exit 1
 fi
-xcodebuild -version
-xcodebuild -version | grep -q '^Xcode 26\.' || { echo 'Expected Xcode 26.x' >&2; exit 1; }
+xcode_version="$(xcodebuild -version)"
+printf '%s\n' "$xcode_version"
+[[ "$xcode_version" == 'Xcode 26.'* ]] || { echo 'Expected Xcode 26.x' >&2; exit 1; }
 # No erase/shutdown/reset of a shared or interactive simulator. Reuse only our named device.
 python3 - "$GITHUB_ENV" <<'PY'
 import json, subprocess, sys

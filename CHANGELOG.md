@@ -9,6 +9,10 @@ Entries reference the pull request that made the change.
 
 ### Added
 
+- Personal fork preview: a quieter By Workspace agent list with stable friend
+  avatars, task-first titles, and compact status labels. New installations start
+  By Workspace; saved presentation choices are preserved. (Local branch; PR pending.)
+
 - Pair a Host whose herdr runs outside your own config, such as one bundled
   in a desktop app, from a version 2 Pairing Code. The Host keeps that
   herdr's socket and launcher, shows them in Host detail, and runs every

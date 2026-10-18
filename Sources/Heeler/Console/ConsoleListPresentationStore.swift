@@ -166,7 +166,7 @@ final class ConsoleListPresentationStore {
         self.defaults = defaults
         mode =
             defaults.string(forKey: Self.modeDefaultsKey)
-            .flatMap(ConsoleListPresentationMode.init(rawValue:)) ?? .flat
+            .flatMap(ConsoleListPresentationMode.init(rawValue:)) ?? .byWorkspace
         collapsedHostIDs = Set(
             (defaults.stringArray(forKey: Self.collapsedHostsDefaultsKey) ?? [])
                 .compactMap(UUID.init(uuidString:)))

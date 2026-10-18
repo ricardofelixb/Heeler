@@ -104,6 +104,9 @@
                 console.setHosts(hosts.hosts)
                 notificationPreferences.setHosts(hosts.hosts)
                 await console.resume()
+                if ProcessInfo.processInfo.arguments.contains("--demo-pi-conversation") {
+                    notificationRouter.path = [.init(hostID: DemoScreenshotFixture.studioHostID, paneID: "mobile:p1")]
+                }
                 if DemoScreenshotMode.showsPluginStates {
                     await notificationPreferences.refresh()
                     for host in DemoScreenshotFixture.pluginStateHosts {
@@ -371,7 +374,7 @@
                     agents: [
                         agent(
                             paneID: "mobile:p1", status: .working,
-                            workspaceID: "mobile", kind: "codex",
+                            workspaceID: "mobile", kind: "pi",
                             name: "ios-polish", title: "Polish the Attach experience",
                             cwd: "/workspace/heeler"),
                         agent(
@@ -1353,6 +1356,14 @@
             return HerdrEventStream(events: events) { await self.endEvents() }
         }
 
+        private var piConversations: [String: DemoPiConversation] = [:]
+
+        func openPiConversation(paneID: String) async throws -> PiConversationSession {
+            let conversation = piConversations[paneID] ?? DemoPiConversation()
+            piConversations[paneID] = conversation
+            return await conversation.open()
+        }
+
         func attachTerminal(
             _ request: TerminalAttachRequest
         ) async throws -> TerminalAttachSession {
@@ -1379,6 +1390,8 @@
         func close() async throws {
             isClosed = true
             endEvents()
+            for conversation in piConversations.values { await conversation.close() }
+            piConversations.removeAll()
             for continuation in terminalContinuations.values {
                 continuation.finish()
             }

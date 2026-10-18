@@ -153,7 +153,7 @@ Changes never modifies the Checkout.
 _Avoid_: diff, source control, Agent's changes, project changes
 
 **Console**:
-The native dashboard surface, split into Agents, Terminals, Hosts, and Settings tabs; the two lists share one Host filter, and each hides its own search field until pulled down. Agents lists Agents across Hosts as a flat list or collapsible sections By Host or By Workspace, opening Agent detail. Workspace sections are scoped to their Host and ordered by their first Agent in the existing priority order; Agents keep their relative order within each section. Presentation and collapse choices persist, and search opens matching sections without changing those choices. Terminals lists ordinary shell Panes as one card per Workspace, By Workspace or nested By Host, opening Shell Terminal. Hosts is Host management. The Console reopens the list tab it last showed. On an iPad beside its sidebar the tabs give way to the sidebar: a switch between the two lists at its top, Hosts and Settings as sheets from its foot, and each list's search behind a button there.
+The native dashboard surface, split into Agents, Terminals, Hosts, and Settings tabs; the two lists share one Host filter, and each hides its own search field until pulled down. Agents lists Agents across Hosts as a flat list or collapsible sections By Host or By Workspace, opening Agent detail. Workspace sections are scoped to their Host and ordered by their first Agent in the existing priority order; Agents keep their relative order within each section. By Workspace is the initial presentation, with compact title/status rows and a stable friend avatar per Host/Pane identity; the section carries Host context. Flat and By Host keep the configurable Agent Row Layout. Presentation and collapse choices persist, and search opens matching sections without changing those choices. Terminals lists ordinary shell Panes as one card per Workspace, By Workspace or nested By Host, opening Shell Terminal. Hosts is Host management. The Console reopens the list tab it last showed. On an iPad beside its sidebar the tabs give way to the sidebar: a switch between the two lists at its top, Hosts and Settings as sheets from its foot, and each list's search behind a button there.
 _Avoid_: dashboard, home
 
 **Agent Row Layout**:
@@ -185,6 +185,16 @@ by recency. Pins persist locally and are never pruned, so a pane id that
 returns after a herdr restart stays pinned.
 _Avoid_: favorite, star, bookmark
 
+**Pi Conversation** (personal fork):
+The default detail for a Pi Agent: native text messages, expandable tool activity,
+a local draft and Stop, mirrored from the existing Pi process by an opt-in
+extension over SSH. It neither starts a second Agent nor parses the terminal.
+Terminal opens the same Pane for slash commands, attachments and unsupported
+extension UI. Other agent kinds keep Attach. Pi owns the conversation and agent
+lifetime; leaving the view only disconnects its stream. Recent native history is
+bounded; full history remains in Pi. See [ADR 0024](docs/adr/0024-pi-session-conversation-mirror.md).
+_Avoid_: separate chat agent, transcript scraping
+
 **Composer**:
 The local input control below the Agent's live terminal: a native draft field
 that composes a message entirely on device and delivers it in one piece. Its
@@ -198,7 +208,8 @@ Blocked: Send then inserts the draft into Attach without Enter, and the tools
 keyboard submits or cancels. Delivered means the Host accepted the text into
 the pane — whether the Agent queues or acts on it is the Agent's business,
 and the Composer never claims otherwise.
-Composer remains the default authored-input path on Agent detail. Direct Input
+Composer remains the default authored-input path on terminal-based Agent detail;
+Pi Conversation has its own native draft/send path through Pi's extension API. Direct Input
 is an explicit, opt-in alternative that hides the Composer card without
 clearing or submitting the draft.
 _Avoid_: reply bar, compose bar (the shelved predecessors), input box, message box

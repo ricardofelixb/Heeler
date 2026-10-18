@@ -2153,6 +2153,27 @@ actor HeelerSSHTransport: Transport {
         }
     }
 
+    func openPiConversation(paneID: String) async throws -> PiConversationSession {
+        let environment = try await remoteEnvironment()
+        guard !environment.isWindows else {
+            throw TransportError.hostFeatureUnavailable(feature: "Pi mirroring requires a macOS or Linux Host")
+        }
+        let path = PiConversationEndpoint.socket(
+            home: environment.home, herdrSocket: try await resolvedSocketPath(), paneID: paneID)
+        let lease = try await channelAdmission.acquire(.ordinaryForwarding)
+        do {
+            let channel = try await connection.openStreamLocal(socketPath: path, timeout: requestTimeout)
+            return PiConversationSSHSession.open(channel: channel, lease: lease)
+        } catch {
+            await lease.release()
+            if case SSHError.streamLocalOpenFailed = error {
+                throw TransportError.channelFailed(
+                    detail: "Pi mirror isn't available. Load this fork's pi-extension/index.ts in the existing Pi session, then Retry. Terminal is still available.")
+            }
+            throw error
+        }
+    }
+
     private func resolvedSocketPath() async throws -> String {
         try await apiEnvironment().socketPath(for: socketLocation)
     }

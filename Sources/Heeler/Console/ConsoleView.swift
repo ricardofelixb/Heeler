@@ -1452,14 +1452,28 @@ struct ConsoleView: View {
     }
 
     private func agentRow(_ agent: ConsoleAgent) -> some View {
-        NavigationLink(value: ConsoleSelection.agent(agent.id)) {
-            AgentCardView(
-                agent: agent,
-                layout: console.rowLayout(for: agent.hostID),
-                isPinned: console.pins.isPinned(
-                    hostID: agent.hostID, paneID: agent.agent.paneID),
-                changes: console.rowChanges.store(for: agent))
+        let isWorkspace = listPresentation.mode == .byWorkspace
+        return NavigationLink(value: ConsoleSelection.agent(agent.id)) {
+            Group {
+                if isWorkspace {
+                    WorkspaceAgentRow(
+                        agent: agent,
+                        isPinned: console.pins.isPinned(
+                            hostID: agent.hostID, paneID: agent.agent.paneID))
+                } else {
+                    AgentCardView(
+                        agent: agent,
+                        layout: console.rowLayout(for: agent.hostID),
+                        isPinned: console.pins.isPinned(
+                            hostID: agent.hostID, paneID: agent.agent.paneID),
+                        changes: console.rowChanges.store(for: agent))
+                }
+            }
             .modifier(ConsoleRowSelectionContent())
+        }
+        .listRowInsets(isWorkspace ? EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16) : nil)
+        .alignmentGuide(.listRowSeparatorLeading) { dimensions in
+            dimensions[.leading] + (isWorkspace ? 54 : 0)
         }
         // The list reads what it shows: a row on screen reads its Agent's
         // Checkout, and an exit from Working while none does waits for one.
@@ -2230,7 +2244,7 @@ struct MissingAgentPresentation: Equatable {
     }
 }
 
-/// Workspace headers use the same typography and status counts as Hosts.
+/// Workspace context appears once above the quiet friend-led rows.
 private struct ConsoleWorkspaceSectionHeader: View {
     let section: ConsoleWorkspaceSection
     let onToggle: () -> Void
@@ -2238,22 +2252,25 @@ private struct ConsoleWorkspaceSectionHeader: View {
     var body: some View {
         Button(action: onToggle) {
             HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(section.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.primary)
-                    Text(section.hostName)
-                        .font(.caption)
-                        .foregroundStyle(Color.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 5) {
+                            Text(section.title).fontWeight(.semibold)
+                            Text("·")
+                            Text(section.hostName)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(section.title).fontWeight(.semibold)
+                            Text(section.hostName)
+                        }
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
                     if section.isCollapsed && !section.statusCounts.items.isEmpty {
                         ConsoleHostStatusCountPills(items: section.statusCounts.items)
                     }
                 }
-                .lineLimit(1)
-                Spacer(minLength: 0)
-                Text("\(section.agents.count)")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.secondary)
+                Spacer(minLength: 8)
                 Image(systemName: section.isCollapsed ? "chevron.right" : "chevron.down")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Color.secondary)

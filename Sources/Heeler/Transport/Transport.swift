@@ -186,6 +186,9 @@ protocol Transport: Sendable {
     /// targets share the bounded Host channel admission budget.
     func attachTerminal(_ request: TerminalAttachRequest) async throws -> TerminalAttachSession
 
+    /// Mirrors an existing Pi TUI through its opt-in extension; never starts an agent.
+    func openPiConversation(paneID: String) async throws -> PiConversationSession
+
     /// Stages one normalized app-owned image in private Host temporary
     /// storage. Concrete transports own destination selection, restrictive
     /// permissions, partial-file handling, and atomic completion (ADR 0006).
@@ -296,6 +299,10 @@ protocol Transport: Sendable {
 }
 
 extension Transport {
+    func openPiConversation(paneID: String) async throws -> PiConversationSession {
+        throw TransportError.hostFeatureUnavailable(feature: "Pi conversation mirroring on this Host")
+    }
+
     var routeID: UUID? { nil }
 
     /// Test doubles and alternative transports that do not expose Host-level

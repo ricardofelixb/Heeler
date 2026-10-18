@@ -21,6 +21,7 @@ name: CI (Node)
 on:
   pull_request:
     paths:
+      - pi-extension/**
       - plugin/**
       - relay/**
       - scripts/generate-wire-types.py
@@ -30,6 +31,7 @@ on:
   push:
     branches: [main]
     paths:
+      - pi-extension/**
       - plugin/**
       - relay/**
       - scripts/generate-wire-types.py
@@ -45,6 +47,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  pi-mirror-test:
+    name: Pi mirror bridge (Node)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Run Pi mirror bridge regression tests
+        run: node --test pi-extension/bridge.test.mjs
+
   plugin-test:
     name: Pairing plugin (Node)
     runs-on: ubuntu-latest

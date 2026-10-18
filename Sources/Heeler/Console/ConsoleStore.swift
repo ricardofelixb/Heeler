@@ -61,6 +61,7 @@ final class ConsoleStore {
     }
     /// Composer ownership sits above the detail branch so a transient
     /// missing-Agent placeholder during reconnect cannot destroy a draft.
+    @ObservationIgnored private var piConversationStores: [ConsoleAgent.ID: PiConversationStore] = [:]
     @ObservationIgnored private var composerStores: [
         ConsoleAgent.ID: AgentComposerStore
     ] = [:]
@@ -125,6 +126,7 @@ final class ConsoleStore {
     func setHosts(_ hosts: [Host]) {
         let incoming = Dictionary(hosts.map { ($0.id, $0) }) { _, last in last }
         composerStores = composerStores.filter { incoming[$0.key.hostID] != nil }
+        piConversationStores = piConversationStores.filter { incoming[$0.key.hostID] != nil }
         for (id, projection) in projections where incoming[id] != projection.host {
             sidebarSnapshots.invalidate(id)
             pluginStatuses.invalidate(id)
@@ -452,6 +454,24 @@ final class ConsoleStore {
     func promptAgent(_ params: AgentPromptParams, on hostID: Host.ID) async throws -> Agent {
         try await projection(for: hostID).session.withTransport { transport in
             try await transport.promptAgent(params)
+        }
+    }
+
+    func piConversationStore(for agent: ConsoleAgent) -> PiConversationStore {
+        if let existing = piConversationStores[agent.id] { return existing }
+        let hostID = agent.hostID
+        let paneID = agent.agent.paneID
+        let store = PiConversationStore { [weak self] in
+            guard let self else { throw TransportError.cancelled }
+            return try await self.openPiConversation(paneID: paneID, on: hostID)
+        }
+        piConversationStores[agent.id] = store
+        return store
+    }
+
+    private func openPiConversation(paneID: String, on hostID: Host.ID) async throws -> PiConversationSession {
+        try await projection(for: hostID).session.withTransport { transport in
+            try await transport.openPiConversation(paneID: paneID)
         }
     }
 

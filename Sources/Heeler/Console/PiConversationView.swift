@@ -7,6 +7,9 @@ struct PiConversationView: View {
     let palette: TerminalThemePalette
     let isActive: Bool
     let connectionGeneration: UInt64?
+    /// Where the floating header ends, from the top of the screen's surface,
+    /// which the transcript reaches by running under the status bar.
+    let headerBottom: CGFloat
     @State private var followsLatest = true
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @State private var scrollPhase = ScrollPhase.idle
@@ -22,9 +25,10 @@ struct PiConversationView: View {
         // Stays mounted to keep observing while the terminal shows through.
         ZStack {
             if store.showsTranscript {
-                transcript
-                    .background(palette.background)
-                    .transition(.opacity)
+                GeometryReader { proxy in
+                    transcript(composerHeight: proxy.safeAreaInsets.bottom)
+                }
+                .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -38,7 +42,9 @@ struct PiConversationView: View {
     private var secondary: Color { palette.foreground.opacity(0.6) }
     private var surface: Color { palette.foreground.opacity(0.08) }
 
-    private var transcript: some View {
+    /// Runs beneath the header and composer, fading into the background at
+    /// both ends so messages pass under the glass rather than being cut off.
+    private func transcript(composerHeight: CGFloat) -> some View {
         ScrollView {
             // History is bounded to 120 rows. Lay out its real heights once,
             // rather than correcting lazy estimates while opening at the end.
@@ -57,14 +63,32 @@ struct PiConversationView: View {
                     ProgressView().tint(secondary).accessibilityLabel("Pi is working")
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .contentMargins(.top, headerBottom + 16, for: .scrollContent)
+        .contentMargins(.bottom, composerHeight + 16, for: .scrollContent)
+        .overlay(alignment: .top) {
+            PiEdgeFade(edge: .top, color: palette.background)
+                .frame(height: headerBottom + 48)
+        }
+        .overlay(alignment: .bottom) {
+            PiEdgeFade(edge: .bottom, color: palette.background)
+                .frame(height: composerHeight + 48)
+        }
+        .modifier(SystemScrollEdgeHidden())
+        .background(palette.background)
+        .ignoresSafeArea(.container, edges: .vertical)
         .foregroundStyle(palette.foreground)
         .scrollDismissesKeyboard(.interactively)
         .scrollPosition($scrollPosition)
         .defaultScrollAnchor(.bottom, for: .initialOffset)
         .defaultScrollAnchor(.top, for: .alignment)
+        // The keyboard coming up shrinks the transcript; keep its end in view.
+        .defaultScrollAnchor(.bottom, for: .sizeChanges)
+        .overlay {
+            if store.rows.isEmpty && !store.isConnected { ProgressView().tint(secondary) }
+        }
         .onScrollPhaseChange { previous, phase in
             scrollPhase = phase
             if phase == .interacting || (phase == .idle && previous == .decelerating) {
@@ -83,6 +107,13 @@ struct PiConversationView: View {
         }
         .onChange(of: store.rows) {
             if followsLatest { scrollPosition.scrollTo(edge: .bottom) }
+        }
+        // Your own message landing means you sent it: follow the reply even if
+        // you had scrolled back to read.
+        .onChange(of: store.rows.last { $0.role == "user" }?.id) { previous, latest in
+            guard previous != nil, latest != previous else { return }
+            followsLatest = true
+            scrollPosition.scrollTo(edge: .bottom)
         }
         .onChange(of: store.isBusy) {
             if followsLatest { scrollPosition.scrollTo(edge: .bottom) }
@@ -157,6 +188,46 @@ struct PiConversationView: View {
         } else {
             Text(.init(row.text)).textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// The background closing in over an edge of the transcript, with a light
+/// blur under it, so text dissolves behind the header or composer.
+private struct PiEdgeFade: View {
+    let edge: VerticalEdge
+    let color: Color
+
+    var body: some View {
+        let mask = LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .black.opacity(0.18), location: 0.22),
+                .init(color: .black.opacity(0.62), location: 0.48),
+                .init(color: .black.opacity(0.92), location: 0.72),
+                .init(color: .black, location: 1),
+            ],
+            startPoint: edge == .top ? .bottom : .top,
+            endPoint: edge == .top ? .top : .bottom)
+        ZStack {
+            // Materials lighten a dark theme; at full strength the blur reads
+            // as a grey band around the header rather than a soft edge.
+            Rectangle().fill(.ultraThinMaterial).mask(mask).opacity(0.5)
+            color.mask(mask)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// iOS 26 dims a scroll view's edges under bars on its own; the edge fades
+/// already do that, and a second tint would show as a grey band.
+private struct SystemScrollEdgeHidden: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.scrollEdgeEffectHidden()
+        } else {
+            content
         }
     }
 }

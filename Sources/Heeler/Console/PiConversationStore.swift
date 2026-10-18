@@ -8,6 +8,9 @@ final class PiConversationStore {
     typealias Open = @Sendable () async throws -> PiConversationSession
     private(set) var rows: [PiConversationRow] = []
     private(set) var isConnected = false
+    /// The first attempt failed before any snapshot: most likely no extension
+    /// in this Pi, so the terminal shows while retries continue.
+    private(set) var isUnavailable = false
     private(set) var isBusy = false
     private(set) var blocked: String?
     private(set) var isTruncated = false
@@ -27,9 +30,11 @@ final class PiConversationStore {
         self.retryDelay = retryDelay
     }
 
-    /// The transcript covers the terminal only while it's live and Pi isn't
-    /// asking for input there; otherwise the terminal underneath shows.
-    var showsTranscript: Bool { isConnected && blocked == nil }
+    /// The transcript covers the terminal unless Pi is asking for input there
+    /// or the mirror has never answered. It stays up while connecting and
+    /// through reconnects, showing the last snapshot, so the terminal never
+    /// flashes through on a cold start, a remount, or a dropped stream.
+    var showsTranscript: Bool { !isUnavailable && blocked == nil }
 
     /// Multiple windows share one stream. The last departing view releases only SSH, never Pi.
     func observe() async {
@@ -82,6 +87,7 @@ final class PiConversationStore {
             guard !Task.isCancelled, workerID == run else { return }
             session = nil
             isConnected = false
+            if sessionID == nil { isUnavailable = true }
             do { try await retryDelay(delay) } catch { return }
             delay = min(delay * 2, 30)
         }
@@ -106,6 +112,7 @@ final class PiConversationStore {
             isBusy = frame.busy ?? false
             blocked = frame.blocked
             isConnected = true
+            isUnavailable = false
         } else {
             guard incomingEpoch == epoch, incomingSession == sessionID else {
                 throw PiConversationDecoder.invalidStream

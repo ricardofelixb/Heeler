@@ -126,17 +126,30 @@ struct PiConversationTests {
         try await waitUntil("transient failures before any snapshot must not stop retrying") {
             store.rows.map(\.id) == ["open-3"]
         }
+        #expect(store.showsTranscript)
         await bridge.dropStreams()
         try await waitUntil("a dropped stream reconnects to a fresh snapshot") {
             store.rows.map(\.id) == ["open-4"]
         }
+        #expect(store.showsTranscript) // The last snapshot stayed up throughout.
         observer.cancel()
         await observer.value
     }
 
+    @Test func aPiWithoutTheExtensionShowsTheTerminalUntilItAnswers() async throws {
+        let gate = RetryGate()
+        let bridge = PiConversationTestBridge(failures: 1)
+        let store = PiConversationStore(open: { try await bridge.open() }, retryDelay: { _ in await gate.wait() })
+        let observer = Task { await store.observe() }
+        defer { observer.cancel() }
+        try await waitUntil("a first failure reveals the terminal") { !store.showsTranscript }
+        await gate.open()
+        try await waitUntil("the first snapshot covers it again") { store.showsTranscript && store.isConnected }
+    }
+
     @Test func dialogsAndDisconnectsRevealTheTerminalAndHeartbeatsChangeNothing() throws {
         let store = store()
-        #expect(!store.showsTranscript)
+        #expect(store.showsTranscript) // Covers the terminal while the first attempt connects.
         try store.apply(snapshot(rows: [.init(id: "a", role: "user", text: "Hi")]))
         #expect(store.showsTranscript)
         try store.apply(.init(type: "heartbeat", version: 1))
@@ -179,4 +192,18 @@ private actor PiConversationTestBridge {
     }
 
     private func close(_ id: UUID) { streams.removeValue(forKey: id)?.finish() }
+}
+
+private actor RetryGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func open() {
+        isOpen = true
+        for waiter in waiters { waiter.resume() }
+        waiters.removeAll()
+    }
 }

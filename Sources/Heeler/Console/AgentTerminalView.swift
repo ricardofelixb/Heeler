@@ -1026,7 +1026,8 @@ struct AgentTerminalView: View {
                     store: piConversation,
                     palette: themePalette,
                     isActive: scenePhase == .active && isOnStage(),
-                    connectionGeneration: console.hostConnectionGenerations[agent.hostID])
+                    connectionGeneration: console.hostConnectionGenerations[agent.hostID],
+                    headerBottom: backHeaderTop + AgentDetailHeader.controlSize)
             }
         }
         // Above the floating buttons: the open panel covers them.
@@ -1035,7 +1036,7 @@ struct AgentTerminalView: View {
                 let drawer = keyboardCarryingDrawer(workspaceDrawer).palette(themePalette)
                 // The back header's button stands in for the edge handle
                 // while the header is out; folded, the handle comes back.
-                if isBackHeaderExpanded {
+                if isBackHeaderExpanded || isTranscriptVisible {
                     drawer.openedFromHeader(
                         $isHeaderDrawerOpen,
                         panelTop: backHeaderTop + AgentDetailHeader.controlSize + 8)
@@ -1097,24 +1098,39 @@ struct AgentTerminalView: View {
                 rateText: sessionUsage.showsTokenRate ? sessionUsage.usage.rateText : nil,
                 isReserved: agent.sessionFilePath != nil,
                 palette: themePalette)
+            // Keeps its room so the terminal underneath never resizes; the
+            // transcript runs up beneath the header instead.
+            .opacity(isTranscriptVisible ? 0 : 1)
+            .allowsHitTesting(!isTranscriptVisible)
         }
         // The navigation bar remains present only as the owner of the status
         // bar appearance. Its content stays hidden, while this inset keeps
         // terminal output below the system clock.
         .padding(.top, terminalTopInset)
         .overlay(alignment: .top) {
-            AgentDetailHeader(
-                palette: themePalette,
-                isExpanded: $isBackHeaderExpanded,
-                onBack: showsBackButton ? { dismiss() } : nil,
-                actions: backHeaderActions)
+            Group {
+                if isTranscriptVisible {
+                    AgentConversationHeader(
+                        palette: themePalette,
+                        avatar: WorkspaceAgentPresentation.avatar(for: agent.id),
+                        name: WorkspaceAgentPresentation.title(for: agent.agent),
+                        onBack: showsBackButton ? { dismiss() } : nil,
+                        actions: backHeaderActions)
+                } else {
+                    AgentDetailHeader(
+                        palette: themePalette,
+                        isExpanded: $isBackHeaderExpanded,
+                        onBack: showsBackButton ? { dismiss() } : nil,
+                        actions: backHeaderActions)
+                }
+            }
             .environment(
                 \.colorScheme,
                 terminal.themes.selection(for: colorScheme).chromeColorScheme(for: colorScheme))
             .padding(.horizontal, 12)
             .padding(.top, backHeaderTop)
-            .onChange(of: isBackHeaderExpanded) { _, expanded in
-                if !expanded { isHeaderDrawerOpen = false }
+            .onChange(of: isBackHeaderExpanded || isTranscriptVisible) { _, hasHeader in
+                if !hasHeader { isHeaderDrawerOpen = false }
             }
         }
         .onWindowControlsHeightChange { windowControlsHeight = $0 }
@@ -1161,15 +1177,27 @@ struct AgentTerminalView: View {
         AgentDetailHeader.top(outputTop: terminalTopInset, barRow: barRow)
     }
 
-    /// The Workspace's terminals, then Changes at the far end; each only
-    /// where this screen can offer it.
+    /// Whether the transcript covers the terminal right now, rather than
+    /// only being preferred: Pi's dialogs and Direct Input show the terminal.
+    private var isTranscriptVisible: Bool {
+        guard let piConversation, showsConversation, !isDirectInput else { return false }
+        return piConversation.showsTranscript
+    }
+
+    /// The view toggle, the Workspace's terminals, then Changes at the far
+    /// end; each only where this screen can offer it. While the terminal
+    /// shows only because Pi asked for input there, the transcript comes
+    /// back on its own, so there is nothing to toggle.
     private var backHeaderActions: [AgentDetailHeaderAction] {
         var actions: [AgentDetailHeaderAction] = []
-        if piConversation != nil {
+        if isTranscriptVisible {
             actions.append(AgentDetailHeaderAction(
-                title: showsConversation ? "Show Terminal" : "Show Conversation",
-                systemImage: showsConversation ? "apple.terminal" : "bubble.left.and.bubble.right"
-            ) { showsConversation.toggle() })
+                title: "Show Terminal", systemImage: "apple.terminal"
+            ) { showsConversation = false })
+        } else if piConversation != nil, !showsConversation {
+            actions.append(AgentDetailHeaderAction(
+                title: "Show Conversation", systemImage: "bubble.left.and.bubble.right"
+            ) { showsConversation = true })
         }
         if workspaceDrawer != nil {
             actions.append(AgentDetailHeaderAction(

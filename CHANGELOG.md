@@ -33,7 +33,9 @@ Entries reference the pull request that made the change.
   terminal on the normal Agent screen, using the same composer, so slash
   commands, attachments, dialogs and busy steering all work; a header button
   switches between transcript and terminal instantly. Tools collapse into one
-  row per reply and history opens at the latest message.
+  row per reply and history opens at the latest message. Its header is one
+  glass capsule with the Agent's friend and name, holding the screen's
+  actions, and messages fade out beneath the header and composer.
 - Personal fork preview: connections heal on their own. Pi Conversation keeps
   retrying and detects stalled streams, a dropped terminal channel reconnects
   without Reattach, and changing networks re-checks every Host at once.

@@ -84,6 +84,56 @@ struct AgentDetailHeader: View {
     }
 }
 
+/// The header while the transcript covers the terminal: Back, then one glass
+/// capsule naming the Agent, as in a chat. The capsule opens the screen's
+/// actions, so no icon row competes with the conversation.
+struct AgentConversationHeader: View {
+    let palette: TerminalThemePalette
+    let avatar: Image
+    let name: String
+    let onBack: (() -> Void)?
+    let actions: [AgentDetailHeaderAction]
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let onBack {
+                AgentDetailHeaderButton("Back", systemImage: "chevron.left", action: onBack)
+                    .headerGlass(in: .circle)
+            }
+            Menu {
+                ForEach(actions) { action in
+                    Button(action.title, systemImage: action.systemImage, action: action.perform)
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    avatar
+                        .renderingMode(.original)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                        .accessibilityHidden(true)
+                    Text(verbatim: name)
+                        .font(.body.weight(.semibold))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(palette.foreground.opacity(0.58))
+                }
+                .padding(.leading, 8)
+                .padding(.trailing, 14)
+                .frame(height: AgentDetailHeader.controlSize)
+                .frame(maxWidth: 260, alignment: .leading)
+                .contentShape(.capsule)
+            }
+            .buttonStyle(.plain)
+            .fixedSize(horizontal: false, vertical: true)
+            .headerGlass(in: .capsule)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(palette.foreground)
+    }
+}
+
 /// One of `AgentDetailHeader`'s trailing buttons.
 struct AgentDetailHeaderAction: Identifiable {
     let title: LocalizedStringKey

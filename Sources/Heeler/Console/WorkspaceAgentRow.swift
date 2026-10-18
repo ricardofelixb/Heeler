@@ -8,17 +8,9 @@ struct WorkspaceAgentRow: View {
     let isPinned: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    // These are bundled PNG resources, not asset-catalog entries.
-    private var avatar: Image {
-        if let image = UIImage(named: WorkspaceAgentPresentation.friendAsset(for: agent.id)) {
-            return Image(uiImage: image)
-        }
-        return Image(systemName: "person.crop.circle")
-    }
-
     var body: some View {
         HStack(spacing: 12) {
-            avatar
+            WorkspaceAgentPresentation.avatar(for: agent.id)
                 .renderingMode(.original)
                 .resizable()
                 .scaledToFit()
@@ -65,6 +57,14 @@ enum WorkspaceAgentPresentation {
             }
         }
         return "Agent"
+    }
+
+    // These are bundled PNG resources, not asset-catalog entries.
+    static func avatar(for id: ConsoleAgent.ID) -> Image {
+        if let image = UIImage(named: friendAsset(for: id)) {
+            return Image(uiImage: image)
+        }
+        return Image(systemName: "person.crop.circle")
     }
 
     /// Stable pseudo-random assignment to the Host/Pane identity, not its

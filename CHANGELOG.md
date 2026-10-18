@@ -30,8 +30,9 @@ Entries reference the pull request that made the change.
 ### Fixed
 
 - Personal fork preview: the Pi keyboard's Send arrow submits instead of
-  inserting a newline, tools collapse into one expandable row per reply, and
-  conversation history opens at the latest message without lazy-layout jumps.
+  inserting a newline, busy messages use Pi's native steering, tools collapse
+  into one expandable row per reply, and conversation history opens at the latest
+  message without lazy-layout jumps.
 
 - Closing a connection through a Tailscale network no longer risks shutting
   down an unrelated connection that reused its file descriptor. Tailscale

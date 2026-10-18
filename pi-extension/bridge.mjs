@@ -270,7 +270,7 @@ export class PiMirrorBridge {
       if (type === "stop") this.ctx.abort();
       else {
         // Void ExtensionAPI schedules a user message. Ack means submitted, not model completion.
-        this.pi.sendUserMessage(text, { deliverAs: "followUp" });
+        this.pi.sendUserMessage(text, { deliverAs: "steer" });
       }
     } catch (error) { ack.error = String(error.message ?? error); }
     this.write(socket, ack);

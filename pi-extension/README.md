@@ -37,7 +37,8 @@ Windows mirroring is not implemented.
 
 - Text messages from either device and expandable tool activity; assistant text has
   inline Markdown. Thinking blocks aren't transmitted. Images appear as placeholders.
-- Send explicitly calls Pi's `sendUserMessage`; while busy it queues a follow-up.
+- Send calls Pi's `sendUserMessage` with `deliverAs: "steer"`: while busy,
+  Pi handles native steering; while idle, it starts a normal prompt.
   A receipt means **submitted to Pi**, not completed or necessarily accepted by a
   model/extension input handler. Pi remains responsible for execution and history.
 - Stop invokes Pi's existing abort operation. Leaving the view/disconnecting does not.

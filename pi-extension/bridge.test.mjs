@@ -13,8 +13,9 @@ async function fixture(t) {
   const prompts = [];
   let aborted = 0;
   let sessionID = "session-a";
+  let idle = true;
   let branch = [{ type: "message", id: "u1", message: { role: "user", content: "Hello" } }];
-  const ctx = { isIdle: () => true, abort: () => { aborted += 1; },
+  const ctx = { isIdle: () => idle, abort: () => { aborted += 1; },
     sessionManager: { getBranch: () => branch, getSessionId: () => sessionID } };
   const bridge = new PiMirrorBridge({ sendUserMessage: (...args) => prompts.push(args) }, { env, home });
   await bridge.start(ctx);
@@ -42,7 +43,8 @@ async function fixture(t) {
       command: (type, extra = {}) => ({ id: "request-1", epoch: bridge.epoch, sessionID: bridge.conversationID(), type, ...extra }) };
   }
   return { bridge, ctx, client, prompts, address, aborted: () => aborted,
-    setBranch: (value) => { branch = value; }, setSession: (value) => { sessionID = value; } };
+    setBranch: (value) => { branch = value; }, setSession: (value) => { sessionID = value; },
+    setIdle: (value) => { idle = value; } };
 }
 
 const options = { timeout: 5_000 };
@@ -71,7 +73,20 @@ test("lost acknowledgment retry after reconnect submits exactly one prompt", opt
   a.socket.destroy();
   const b = await f.client(); await b.next(); b.write(command);
   assert.equal((await b.next()).error, undefined);
-  assert.deepEqual(f.prompts, [["Continue", { deliverAs: "followUp" }]]);
+  assert.deepEqual(f.prompts, [["Continue", { deliverAs: "steer" }]]);
+});
+
+test("busy messages use Pi's native steering exactly once, not follow-up delivery", options, async (t) => {
+  const f = await fixture(t);
+  f.setIdle(false);
+  const a = await f.client();
+  assert.equal((await a.next()).busy, true);
+  const command = a.command("prompt", { text: "Change direction now" });
+  a.write(command);
+  assert.deepEqual(await a.next(), { type: "ack", id: command.id });
+  a.write(command);
+  assert.deepEqual(await a.next(), { type: "ack", id: command.id });
+  assert.deepEqual(f.prompts, [["Change direction now", { deliverAs: "steer" }]]);
 });
 
 test("stale session, stale bridge, reused ID, slash commands, and UI blocking reject", options, async (t) => {

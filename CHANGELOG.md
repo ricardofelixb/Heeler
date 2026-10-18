@@ -12,11 +12,11 @@ Entries reference the pull request that made the change.
 - Personal fork preview: Pi Agents open a native conversation mirrored from the
   same running Pi session, with text, expandable tools, composer, Stop, and a
   same-pane Terminal fallback. Requires the opt-in `pi-extension` on macOS/Linux;
-  other agents keep their terminal interface. (Local branch; PR pending.)
+  other agents keep their terminal interface. (#1)
 
 - Personal fork preview: a quieter By Workspace agent list with stable friend
   avatars, task-first titles, and compact status labels. New installations start
-  By Workspace; saved presentation choices are preserved. (Local branch; PR pending.)
+  By Workspace; saved presentation choices are preserved. (#1)
 
 - Pair a Host whose herdr runs outside your own config, such as one bundled
   in a desktop app, from a version 2 Pairing Code. The Host keeps that

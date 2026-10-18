@@ -34,7 +34,8 @@ On the Mac:
 On Omarchy/Arch Linux:
 
 ```sh
-sudo pacman -S --needed usbmuxd libimobiledevice ideviceinstaller
+sudo pacman -S --needed usbmuxd libimobiledevice
+yay -S --needed ideviceinstaller
 ```
 
 Unplug the iPhone, unlock it, reconnect directly, then tap **Trust** when asked:
@@ -75,12 +76,13 @@ phone must appear in every embedded provisioning profile, including extensions.
 
 ```sh
 scp ricardo@ricardos-mac-mini:Projects/forks/Heeler/build/device-export/Heeler.ipa .
-ideviceinstaller install Heeler.ipa
+ideviceinstaller -i Heeler.ipa
 ```
 
-Current [ideviceinstaller releases](https://github.com/libimobiledevice/ideviceinstaller/releases)
-use subcommands. Check `ideviceinstaller --help` on an older package, which may
-use `-i Heeler.ipa` instead.
+The [AUR package](https://aur.archlinux.org/packages/ideviceinstaller) uses the
+legacy `-i` syntax. Newer [upstream releases](https://github.com/libimobiledevice/ideviceinstaller/releases)
+use `ideviceinstaller install Heeler.ipa` instead; check `ideviceinstaller --help`
+for the installed version.
 
 Enable **Developer Mode** on the iPhone when prompted (Settings → Privacy &
 Security → Developer Mode, followed by a restart and confirmation). If that

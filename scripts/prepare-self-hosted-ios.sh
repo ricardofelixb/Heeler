@@ -20,6 +20,12 @@ python3 -c 'import sys; assert sys.version_info >= (3, 12), "Install Python >= 3
 xcode_version="$(xcodebuild -version)"
 printf '%s\n' "$xcode_version"
 [[ "$xcode_version" == 'Xcode 26.'* ]] || { echo 'Expected Xcode 26.x' >&2; exit 1; }
+# checkout falls back to a .git-less archive if Apple's Git cannot run. Reject
+# that before spending time on fixtures/builds: evidence needs a verified SHA.
+checkout_sha="$(git -C "$(dirname "$0")/.." rev-parse HEAD)"
+[[ -z "${GITHUB_SHA:-}" || "$checkout_sha" == "$GITHUB_SHA" ]] || {
+    echo 'The checkout does not match GITHUB_SHA' >&2; exit 1;
+}
 # No erase/shutdown/reset of a shared or interactive simulator. Reuse only our named device.
 python3 - "$GITHUB_ENV" <<'PY'
 import json, subprocess, sys

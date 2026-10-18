@@ -141,6 +141,9 @@ jobs:
       HEELER_XCODEBUILD_BUILD_TIMEOUT_SECONDS: '1200'
     steps:
       - uses: actions/checkout@v5
+        env:
+          # Apple's Git uses xcrun too: select native Xcode before checkout, not just before builds.
+          DEVELOPER_DIR: ${{ runner.environment == 'self-hosted' && '/Applications/Xcode.app/Contents/Developer' || '/Applications/Xcode_26.6.app/Contents/Developer' }}
       - uses: actions/setup-python@v6
         if: runner.environment != 'self-hosted'
         with:
@@ -263,6 +266,8 @@ jobs:
       HEELER_CI_DISABLE_DEBUG_SYMBOLS: '1'
     steps:
       - uses: actions/checkout@v5
+        env:
+          DEVELOPER_DIR: ${{ runner.environment == 'self-hosted' && '/Applications/Xcode.app/Contents/Developer' || '/Applications/Xcode_26.6.app/Contents/Developer' }}
       - uses: actions/setup-python@v6
         if: runner.environment != 'self-hosted'
         with:

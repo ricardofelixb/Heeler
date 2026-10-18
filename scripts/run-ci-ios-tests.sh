@@ -1037,7 +1037,7 @@ unset env(HEELER_SYSADMINCTL_PASSWORD)
 
 spawn /usr/bin/sudo -n /usr/sbin/sysadminctl \
     -addUser $env(HEELER_SYSADMINCTL_USERNAME) \
-    -fullName {Heeler SSH CI} \
+    -fullName "Heeler SSH CI $env(HEELER_SYSADMINCTL_USERNAME)" \
     -UID $env(HEELER_SYSADMINCTL_UID) \
     -GID 20 \
     -shell /bin/zsh \

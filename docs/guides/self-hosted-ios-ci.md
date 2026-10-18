@@ -77,8 +77,10 @@ Diagnostics use the same runner but retain their separate, non-merge-gate eviden
 
 ## Isolation and reuse
 
-`prepare-self-hosted-ios.sh` fails early if non-interactive fixture privileges or
-the expected Xcode/runtime are missing. It selects/creates only **Heeler CI iPhone
+Checkout selects the native Xcode path before Apple's Git runs; otherwise
+`xcrun` fails and checkout silently downloads an archive without `.git`.
+`prepare-self-hosted-ios.sh` rejects a missing/mismatched Git identity and fails
+early if non-interactive fixture privileges or the expected Xcode/runtime are missing. It selects/creates only **Heeler CI iPhone
 17**, exports its UDID, and never erases, shuts down or resets an interactive
 simulator. The existing test harness owns fixture ports/users, per-run derived
 data, evidence, simulator locks and cleanup. Only one Heeler job executes at once;

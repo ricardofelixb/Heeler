@@ -50,6 +50,8 @@ jobs:
       HEELER_XCODEBUILD_TEST_TIMEOUT_SECONDS: '1800'
     steps:
       - uses: actions/checkout@v5
+        env:
+          DEVELOPER_DIR: ${{ runner.environment == 'self-hosted' && '/Applications/Xcode.app/Contents/Developer' || '/Applications/Xcode_26.6.app/Contents/Developer' }}
       - uses: actions/setup-python@v6
         if: runner.environment != 'self-hosted'
         with:

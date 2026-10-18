@@ -74,6 +74,17 @@ class SelfHostedIOSTests(unittest.TestCase):
         helper = (ROOT / "scripts/prepare-self-hosted-ios.sh").read_text()
         self.assertIn("sys.version_info >= (3, 12)", helper)
 
+    def test_checkout_selects_valid_xcode_before_apple_git_runs(self):
+        expected = "DEVELOPER_DIR: ${{ runner.environment == 'self-hosted' && '/Applications/Xcode.app/Contents/Developer' || '/Applications/Xcode_26.6.app/Contents/Developer' }}"
+        for source, count in ((CI.split("\n  build-test:", 1)[0], 2), (DIAGNOSTICS, 1)):
+            checkout_steps = re.findall(r"- uses: actions/checkout@v5\n(.*?)(?=\n      - |\Z)", source, re.S)
+            self.assertEqual(len(checkout_steps), count)
+            for step in checkout_steps:
+                self.assertIn(expected, step)
+        helper = (ROOT / "scripts/prepare-self-hosted-ios.sh").read_text()
+        self.assertIn('rev-parse HEAD', helper)
+        self.assertLess(helper.index('rev-parse HEAD'), helper.index('simctl'))
+
     def policy(self, *arguments):
         return subprocess.run(["/bin/bash", str(ROOT / "scripts/install-self-hosted-ios-sudoers.sh"),
                                "--print", *arguments], text=True, capture_output=True)

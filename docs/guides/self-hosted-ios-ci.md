@@ -37,6 +37,14 @@ changes and executable code before approving external contributions. No
   **not root**. This is a per-user LaunchAgent: it starts on user login, not an
   unattended pre-login boot. Keep the Mac awake and that user logged in for CI.
   It neither replaces nor reconfigures the other repositories' runner services.
+- macOS also requires **Full Disk Access** for the runner's responsible process:
+  `~/actions-runner-heeler/externals/node24/bin/node`. In System Settings → Privacy
+  & Security → Full Disk Access, use `+` and Cmd-Shift-G to select that exact file,
+  enable it, then restart this runner's service. This is a separate, broad privacy
+  grant, not implied by sudo; approve it explicitly. Runner binary updates may
+  require reapproval. Without it, TCC denies Directory Service changes and
+  `sysadminctl` can hang after “Assigning UID” even as root. Do not work around this
+  by editing TCC databases, disabling SIP, or granting access to unrelated runners.
 - Review, then install the fixture policy once in a real Mac Terminal:
 
   ```sh

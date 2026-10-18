@@ -679,7 +679,7 @@ cleanup() {
             fi
             if [[ "$preserve_password_fixture" != "1" ]] \
                 && ! sudo -n /usr/sbin/sysadminctl \
-                    -deleteUser "$password_username" -keepHome; then
+                    -deleteUser "$password_username"; then
                 preserve_password_fixture=1
                 if [[ "$status" -eq 0 ]]; then
                     status=1

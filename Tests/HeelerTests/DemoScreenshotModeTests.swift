@@ -32,7 +32,7 @@
             #expect(Set(agents.map(\.agentStatus)) == [.blocked, .working, .done, .idle])
             #expect(
                 Set(agents.compactMap(\.agent))
-                    == ["claude", "codex", "gemini", "opencode"])
+                    == ["claude", "gemini", "opencode", "pi"])
             #expect(agents.map(\.paneID).contains("checkout:p3"))
             #expect(hosts.allSatisfy { $0.address.hasSuffix(".demo.invalid") })
         }

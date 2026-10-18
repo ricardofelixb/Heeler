@@ -9,6 +9,11 @@ Entries reference the pull request that made the change.
 
 ### Added
 
+- Personal fork preview: Pi Agents open a native conversation mirrored from the
+  same running Pi session, with text, expandable tools, composer, Stop, and a
+  same-pane Terminal fallback. Requires the opt-in `pi-extension` on macOS/Linux;
+  other agents keep their terminal interface. (Local branch; PR pending.)
+
 - Personal fork preview: a quieter By Workspace agent list with stable friend
   avatars, task-first titles, and compact status labels. New installations start
   By Workspace; saved presentation choices are preserved. (Local branch; PR pending.)

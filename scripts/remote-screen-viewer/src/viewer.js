@@ -229,22 +229,24 @@ window.heelerScreen = {
     closedByApp = false;
     failed = false;
     channel = new AppChannel();
-    rfb = new RFB(document.getElementById("screen"), channel, {
-      shared: true,
-      credentials: { password: options.password ?? "" },
-    });
-    // Only no auth or a VNC password: macOS offers Apple's account login
-    // first, which would want the user's Mac password. Pinned noVNC 1.7.0.
-    rfb._isSupportedSecurityType = (type) => type === 1 || type === 2;
+    const username = options.username ?? "";
+    const password = options.password ?? "";
+    rfb = new RFB(document.getElementById("screen"), channel, { shared: true });
+    // No auth, a VNC password, or Apple's account login, which macOS offers
+    // first: it reaches the real, unlocked desktop, where a VNC password gets
+    // a lock screen of its own. Pinned noVNC 1.7.0.
+    rfb._isSupportedSecurityType = (type) => type === 1 || type === 2 || (type === 30 && !!username);
     rfb.viewOnly = options.viewOnly ?? true;
     // A click would focus the canvas and close the keyboard.
     rfb.focusOnClick = false;
-    // Some desktops hide their pointer; a dot keeps it findable.
-    rfb.showDotCursor = true;
+    // Every Host draws its own pointer, either as a cursor it sends or in
+    // the picture itself; a dot as well would be a second one.
+    rfb.showDotCursor = false;
     rfb.scaleViewport = true;
     rfb.resizeSession = false;
     rfb.background = "transparent";
-    rfb.qualityLevel = 6;
+    // Sharper JPEG for full control; the small preview needs less.
+    rfb.qualityLevel = options.viewOnly === false ? 8 : 6;
     rfb.compressionLevel = 2;
     rfb.addEventListener("connect", () => {
       post({ type: "connected" });
@@ -254,19 +256,21 @@ window.heelerScreen = {
       // A specific failure was already reported; keep it.
       if (!closedByApp && !failed) post({ type: "disconnected" });
     });
-    rfb.addEventListener("credentialsrequired", () => {
-      if (!options.password) {
+    let account = false;
+    rfb.addEventListener("credentialsrequired", (event) => {
+      account = event.detail?.types?.includes("username") ?? false;
+      if (!password) {
         // The app asks the user rather than trying an empty password.
         failed = true;
-        post({ type: "error", reason: "auth" });
+        post({ type: "error", reason: "auth", account });
         teardown();
         return;
       }
-      rfb?.sendCredentials({ password: options.password });
+      rfb?.sendCredentials(account ? { username, password } : { password });
     });
     rfb.addEventListener("securityfailure", () => {
       failed = true;
-      post({ type: "error", reason: "auth" });
+      post({ type: "error", reason: "auth", account });
     });
   },
   opened() {

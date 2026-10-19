@@ -91,14 +91,10 @@ struct PiAgentSheet: View {
         screen = RemoteScreenSession(host: host, store: screenSettings, viewOnly: true)
     }
 
-    /// Hosts without a screen show no section; while the Host is asked
-    /// again, it keeps the place it had last time.
+    /// Every Host is expected to have a screen, so its place shows at once;
+    /// only a Host that turns out to have none drops it.
     private func showsScreen(_ screen: RemoteScreenSession, of host: Host) -> Bool {
-        switch screen.phase {
-        case .unavailable: false
-        case .connecting: screenSettings.hadScreen(host.id) ?? false
-        default: true
-        }
+        screen.phase != .unavailable
     }
 
     /// The session's scoped models, one inline section per provider.

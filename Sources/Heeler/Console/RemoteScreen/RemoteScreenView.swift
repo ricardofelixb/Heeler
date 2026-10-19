@@ -20,7 +20,15 @@ struct RemoteScreenPreview: View {
     var body: some View {
         Button(action: onOpen) {
             ZStack {
-                Color.black
+                if session.phase == .live {
+                    Color.black
+                } else {
+                    // A skeleton until the first picture: every Host has a screen.
+                    Color.secondary.opacity(0.18)
+                        .phaseAnimator([0.6, 1]) { view, opacity in view.opacity(opacity) } animation: { _ in
+                            .easeInOut(duration: 0.9)
+                        }
+                }
                 RemoteScreenWebView(session: session)
                     .allowsHitTesting(false)
                 RemoteScreenStatus(session: session, compact: true)
@@ -79,8 +87,12 @@ struct RemoteScreenFullView: View {
         }
         .preferredColorScheme(.dark)
         .statusBarHidden()
-        .onAppear { session = makeSession() }
+        .onAppear {
+            session = makeSession()
+            RemoteScreenOrientation.allowsLandscape = true
+        }
         .onDisappear {
+            RemoteScreenOrientation.allowsLandscape = false
             session?.stop()
             session = nil
         }
@@ -97,13 +109,13 @@ private struct RemoteScreenStatus: View {
         case .live:
             EmptyView()
         case .connecting:
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small).tint(.white)
-                if !compact {
+            if !compact {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small).tint(.white)
                     Text("Connecting…").font(.footnote)
                 }
+                .foregroundStyle(.white.opacity(0.7))
             }
-            .foregroundStyle(.white.opacity(0.7))
         case .unavailable:
             Text("No screen found on this Host.")
                 .font(.footnote)
@@ -142,7 +154,10 @@ private struct RemoteScreenPasswordPrompt: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Text("This screen needs its VNC password.")
+            Text(session.wantsAccountLogin
+                 ? "Log in as \(session.username) with this Mac's password."
+                 : "This screen needs its VNC password.")
+                .multilineTextAlignment(.center)
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.8))
             SecureField("Password", text: $password)

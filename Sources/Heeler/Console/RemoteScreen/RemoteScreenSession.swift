@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import OSLog
+import Synchronization
 import WebKit
 
 /// One live view of a Host's screen: the bundled noVNC page in a web view,
@@ -26,6 +27,11 @@ final class RemoteScreenSession {
     }
     private static let log = Logger(subsystem: "dev.bybee.heeler", category: "RemoteScreen")
     private(set) var isKeyboardOpen = false
+    /// The server asked for an account login (macOS) rather than a VNC
+    /// password; the password asked for is then the Mac's own.
+    private(set) var wantsAccountLogin = false
+    /// The account a login uses: the Host's SSH user, the same person.
+    let username: String
     @ObservationIgnored let webView: WKWebView
     @ObservationIgnored private let hostID: Host.ID
     @ObservationIgnored private let store: RemoteScreenSettingsStore
@@ -42,8 +48,12 @@ final class RemoteScreenSession {
     /// Whether this attempt's password came from the Host itself.
     @ObservationIgnored private var passwordFromHost = false
 
-    init(hostID: Host.ID, store: RemoteScreenSettingsStore, viewOnly: Bool, open: @escaping Opener) {
+    init(
+        hostID: Host.ID, username: String = "", store: RemoteScreenSettingsStore, viewOnly: Bool,
+        open: @escaping Opener
+    ) {
         self.hostID = hostID
+        self.username = username
         self.store = store
         self.viewOnly = viewOnly
         self.open = open
@@ -59,7 +69,9 @@ final class RemoteScreenSession {
         if let url = Bundle.main.url(forResource: "RemoteScreenViewer", withExtension: "html"),
            let html = try? String(contentsOf: url, encoding: .utf8)
         {
-            webView.loadHTMLString(html, baseURL: nil)
+            // A secure origin: Apple's login needs WebCrypto, which pages
+            // without one don't get. The page still reaches no network.
+            webView.loadHTMLString(html, baseURL: URL(string: "https://localhost/"))
             connect()
         } else {
             phase = .failed("The screen viewer is missing from this build.")
@@ -68,7 +80,7 @@ final class RemoteScreenSession {
 
     /// Finds and opens a Host's screen over its own SSH connection.
     convenience init(host: Host, store: RemoteScreenSettingsStore, viewOnly: Bool) {
-        self.init(hostID: host.id, store: store, viewOnly: viewOnly) {
+        self.init(hostID: host.id, username: host.username, store: store, viewOnly: viewOnly) {
             let credentials: SSHCredentials
             do {
                 credentials = try HostCredentialsProvider().credentials(for: host)
@@ -127,6 +139,7 @@ final class RemoteScreenSession {
         case "keyboard":
             isKeyboardOpen = body["open"] as? Bool ?? false
         case "error":
+            wantsAccountLogin = body["account"] as? Bool ?? false
             endStream()
             guard body["reason"] as? String == "auth" else {
                 phase = .failed("The screen could not be shown.")
@@ -168,7 +181,6 @@ final class RemoteScreenSession {
                     return
                 }
                 Self.log.notice("screen probe found \(opened.map { String($0.probe.port) } ?? "nothing", privacy: .public)")
-                self.store.setHadScreen(opened != nil, for: self.hostID)
                 guard let opened else {
                     self.phase = .unavailable
                     return
@@ -195,16 +207,21 @@ final class RemoteScreenSession {
         let password = probe.password ?? store.password(for: hostID) ?? ""
         webView.callAsyncJavaScript(
             "window.heelerScreen.connect(options)",
-            arguments: ["options": ["password": password, "viewOnly": viewOnly]],
+            arguments: ["options": ["password": password, "username": username, "viewOnly": viewOnly]],
             in: nil, in: .page, completionHandler: nil)
+        // Reads pile up here between deliveries, so a busy screen crosses
+        // into the page in a few large hand-offs rather than many small ones.
+        let inbox = RemoteScreenInbox()
         let pump = RemoteScreenPump(
             descriptor: stream.descriptor,
             onData: { [weak self] data in
-                let text = data.base64EncodedString()
+                guard inbox.append(data) else { return }
                 Task { @MainActor in
-                    guard let self, self.generation == current else { return }
+                    let pending = inbox.take()
+                    guard let self, self.generation == current, !pending.isEmpty else { return }
                     self.webView.callAsyncJavaScript(
-                        "window.heelerScreen.receive(data)", arguments: ["data": text],
+                        "window.heelerScreen.receive(data)",
+                        arguments: ["data": pending.base64EncodedString()],
                         in: nil, in: .page, completionHandler: nil)
                 }
             },
@@ -246,6 +263,27 @@ private extension TransportError {
         case .authenticationFailed: "The Host refused this device's key."
         case .tcpForwardingUnavailable: "The Host doesn't allow tunnels to its screen."
         default: "The Host couldn't be reached."
+        }
+    }
+}
+
+/// Bytes read from the tunnel and not yet handed to the page.
+private final class RemoteScreenInbox: Sendable {
+    private let pending = Mutex(Data())
+
+    /// Whether this is the first since the last `take`, so a delivery is due.
+    func append(_ data: Data) -> Bool {
+        pending.withLock { pending in
+            let wasEmpty = pending.isEmpty
+            pending.append(data)
+            return wasEmpty
+        }
+    }
+
+    func take() -> Data {
+        pending.withLock { pending in
+            defer { pending = Data() }
+            return pending
         }
     }
 }

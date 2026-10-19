@@ -4,22 +4,15 @@ import Testing
 @testable import Heeler
 
 struct RemoteScreenTests {
-    @Test func typedPasswordsStayInTheSecretStoreAndAvailabilityInDefaults() throws {
-        let suite = "RemoteScreenTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+    @Test func typedPasswordsStayInTheSecretStore() throws {
         let secrets = VolatileSecretStore()
-        let store = RemoteScreenSettingsStore(suiteName: suite, secrets: secrets)
+        let store = RemoteScreenSettingsStore(secrets: secrets)
         let host = UUID()
 
         #expect(store.password(for: host) == nil)
-        #expect(store.hadScreen(host) == nil)
         try store.savePassword("s3cret", for: host)
-        store.setHadScreen(true, for: host)
         #expect(store.password(for: host) == "s3cret")
-        #expect(store.hadScreen(host) == true)
         #expect(try secrets.read(account: host.uuidString) == Data("s3cret".utf8))
-        #expect(defaults.dictionaryRepresentation().values.contains { $0 as? String == "s3cret" } == false)
 
         try store.savePassword(nil, for: host)
         #expect(store.password(for: host) == nil)
@@ -29,25 +22,23 @@ struct RemoteScreenTests {
     /// screen once the Host turns out to have one: the check can't wait for it.
     @MainActor
     @Test func theHostIsAskedBeforeThePageIsOnScreen() async throws {
-        let suite = "RemoteScreenTests.\(UUID().uuidString)"
-        defer { UserDefaults().removePersistentDomain(forName: suite) }
-        let store = RemoteScreenSettingsStore(suiteName: suite, secrets: VolatileSecretStore())
-        let without = UUID()
-        let none = RemoteScreenSession(hostID: without, store: store, viewOnly: true) { nil }
+        let store = RemoteScreenSettingsStore(secrets: VolatileSecretStore())
+        let none = RemoteScreenSession(hostID: UUID(), store: store, viewOnly: true) { nil }
         var descriptors: [Int32] = [-1, -1]
         #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
         defer { close(descriptors[1]) }
-        let with = UUID()
         let stream = HostLoopbackStream(descriptor: descriptors[0]) {}
-        let screen = RemoteScreenSession(hostID: with, store: store, viewOnly: true) {
-            (RemoteScreenProbe(port: 5900, password: nil), stream)
+        let (asked, askedContinuation) = AsyncStream<Void>.makeStream()
+        let screen = RemoteScreenSession(hostID: UUID(), store: store, viewOnly: true) {
+            askedContinuation.yield()
+            return (RemoteScreenProbe(port: 5900, password: nil), stream)
         }
-        for _ in 0..<200 where store.hadScreen(without) == nil || store.hadScreen(with) == nil {
+        var asks = asked.makeAsyncIterator()
+        #expect(await asks.next() != nil)
+        for _ in 0..<200 where none.phase == .connecting {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(none.phase == .unavailable)
-        #expect(store.hadScreen(without) == false)
-        #expect(store.hadScreen(with) == true)
         screen.stop()
     }
 

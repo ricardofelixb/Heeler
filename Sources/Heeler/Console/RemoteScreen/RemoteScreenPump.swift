@@ -49,7 +49,7 @@ final class RemoteScreenPump: @unchecked Sendable {
 
     private func drain() {
         var chunk = Data()
-        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        var buffer = [UInt8](repeating: 0, count: 256 * 1024)
         while chunk.count < 512 * 1024 {
             let count = buffer.withUnsafeMutableBytes {
                 Darwin.read(descriptor, $0.baseAddress, $0.count)

@@ -210,15 +210,11 @@ struct ShellTerminalStoreTests {
         shell.viewDidResize(cols: 80, rows: 24)
         try #require(await eventually { await transport.attachRequests.count == 1 })
         await transport.failAttachStream(.channelFailed(detail: "terminal not found"))
-        try #require(
-            await eventually {
-                if case .ended = shell.terminalStatus { return true }
-                return false
-            })
 
-        shell.retryTerminal()
-
-        try #require(await eventually { await transport.attachRequests.count == 2 })
+        // A dropped channel reattaches on its own, to the same Terminal.
+        try #require(await eventually(timeout: .seconds(5)) {
+            await transport.attachRequests.count == 2
+        })
         #expect(await transport.shellTerminalCreations.count == 1)
         #expect(
             await transport.attachRequests.map(\.target)

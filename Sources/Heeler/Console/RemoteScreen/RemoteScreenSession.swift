@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import OSLog
 import WebKit
 
 /// One live view of a Host's screen: the bundled noVNC page in a web view,
@@ -20,7 +21,10 @@ final class RemoteScreenSession {
 
     typealias Opener = @Sendable () async throws -> (probe: RemoteScreenProbe, stream: HostLoopbackStream)?
 
-    private(set) var phase: Phase = .connecting
+    private(set) var phase: Phase = .connecting {
+        didSet { if phase != oldValue { Self.log.notice("screen \(String(describing: self.phase), privacy: .public)") } }
+    }
+    private static let log = Logger(subsystem: "dev.bybee.heeler", category: "RemoteScreen")
     private(set) var isKeyboardOpen = false
     @ObservationIgnored let webView: WKWebView
     @ObservationIgnored private let hostID: Host.ID
@@ -31,6 +35,9 @@ final class RemoteScreenSession {
     @ObservationIgnored private var pump: RemoteScreenPump?
     @ObservationIgnored private var opening: Task<Void, Never>?
     @ObservationIgnored private var isPageReady = false
+    /// Opened before the page could take it: iOS runs no page that isn't on
+    /// screen, and the screen only goes on screen once a Host has one.
+    @ObservationIgnored private var waiting: (probe: RemoteScreenProbe, stream: HostLoopbackStream, generation: Int)?
     @ObservationIgnored private var generation = 0
     /// Whether this attempt's password came from the Host itself.
     @ObservationIgnored private var passwordFromHost = false
@@ -53,6 +60,7 @@ final class RemoteScreenSession {
            let html = try? String(contentsOf: url, encoding: .utf8)
         {
             webView.loadHTMLString(html, baseURL: nil)
+            connect()
         } else {
             phase = .failed("The screen viewer is missing from this build.")
         }
@@ -76,7 +84,6 @@ final class RemoteScreenSession {
 
     /// Starts over after a failure.
     func retry() {
-        guard isPageReady else { return }
         connect()
     }
 
@@ -95,14 +102,20 @@ final class RemoteScreenSession {
         opening?.cancel()
         opening = nil
         if isPageReady { webView.evaluateJavaScript("window.heelerScreen.disconnect()") }
+        if let waiting {
+            self.waiting = nil
+            Darwin.close(waiting.stream.descriptor)
+            Task { await waiting.stream.finish() }
+        }
         endStream()
     }
 
     fileprivate func handle(_ body: [String: Any]) {
         switch body["type"] as? String {
         case "ready":
+            Self.log.notice("screen page ready")
             isPageReady = true
-            connect()
+            attachWaiting()
         case "send":
             if let text = body["data"] as? String, let data = Data(base64Encoded: text) {
                 pump?.write(data)
@@ -137,6 +150,7 @@ final class RemoteScreenSession {
     }
 
     private func connect() {
+        Self.log.notice("screen connect")
         stop()
         generation += 1
         let current = generation
@@ -153,17 +167,26 @@ final class RemoteScreenSession {
                     }
                     return
                 }
+                Self.log.notice("screen probe found \(opened.map { String($0.probe.port) } ?? "nothing", privacy: .public)")
                 self.store.setHadScreen(opened != nil, for: self.hostID)
                 guard let opened else {
                     self.phase = .unavailable
                     return
                 }
-                self.attach(opened.stream, probe: opened.probe, generation: current)
+                self.waiting = (opened.probe, opened.stream, current)
+                self.attachWaiting()
             } catch {
+                Self.log.notice("screen open failed: \(String(describing: error), privacy: .public)")
                 guard let self, self.generation == current else { return }
                 self.phase = .failed(Self.message(for: error))
             }
         }
+    }
+
+    private func attachWaiting() {
+        guard isPageReady, let waiting, waiting.generation == generation else { return }
+        self.waiting = nil
+        attach(waiting.stream, probe: waiting.probe, generation: waiting.generation)
     }
 
     private func attach(_ stream: HostLoopbackStream, probe: RemoteScreenProbe, generation current: Int) {

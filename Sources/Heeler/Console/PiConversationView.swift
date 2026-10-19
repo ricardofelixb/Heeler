@@ -150,7 +150,9 @@ struct PiConversationView: View {
             }
         }
         .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 80
+            // The container size leaves out the room under the header and
+            // Composer; the visible rect, less what the Composer covers, doesn't.
+            geometry.visibleRect.maxY - geometry.contentInsets.bottom >= geometry.contentSize.height - 80
         } action: { _, value in
             latestIsVisible = value
             // New tokens and keyboard layout aren't user scrolling.

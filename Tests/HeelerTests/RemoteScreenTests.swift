@@ -25,6 +25,32 @@ struct RemoteScreenTests {
         #expect(store.password(for: host) == nil)
     }
 
+    /// The preview's page only runs once it's on screen, and it only goes on
+    /// screen once the Host turns out to have one: the check can't wait for it.
+    @MainActor
+    @Test func theHostIsAskedBeforeThePageIsOnScreen() async throws {
+        let suite = "RemoteScreenTests.\(UUID().uuidString)"
+        defer { UserDefaults().removePersistentDomain(forName: suite) }
+        let store = RemoteScreenSettingsStore(suiteName: suite, secrets: VolatileSecretStore())
+        let without = UUID()
+        let none = RemoteScreenSession(hostID: without, store: store, viewOnly: true) { nil }
+        var descriptors: [Int32] = [-1, -1]
+        #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
+        defer { close(descriptors[1]) }
+        let with = UUID()
+        let stream = HostLoopbackStream(descriptor: descriptors[0]) {}
+        let screen = RemoteScreenSession(hostID: with, store: store, viewOnly: true) {
+            (RemoteScreenProbe(port: 5900, password: nil), stream)
+        }
+        for _ in 0..<200 where store.hadScreen(without) == nil || store.hadScreen(with) == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(none.phase == .unavailable)
+        #expect(store.hadScreen(without) == false)
+        #expect(store.hadScreen(with) == true)
+        screen.stop()
+    }
+
     @Test func probeReadsThePortAndDecodesAVNCPasswordFile() throws {
         // `vncpasswd` stores "password" as dbd83cfd727a1458.
         let file = Data([0xDB, 0xD8, 0x3C, 0xFD, 0x72, 0x7A, 0x14, 0x58]).base64EncodedString()

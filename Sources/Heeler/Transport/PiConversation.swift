@@ -8,6 +8,9 @@ struct PiConversationRow: Codable, Sendable, Equatable, Identifiable {
     let text: String
     var detail: String? = nil
     var state: String? = nil
+
+    /// The reply Pi is still writing; the mirror resends it as it grows.
+    static let streamingID = "streaming"
 }
 
 /// The running Pi's model, thinking level, usage and slash commands.
@@ -18,14 +21,20 @@ struct PiConversationSettings: Codable, Sendable, Equatable {
         let name: String
         var thinkingLevels: [String] = ["off"]
     }
+    struct Limit: Codable, Sendable, Equatable {
+        let label: String
+        /// Percent of the week's allowance still left.
+        let left: Int
+        /// When the week starts over, in milliseconds since 1970.
+        let resetsAt: Double
+    }
     struct Usage: Codable, Sendable, Equatable {
         var contextTokens: Int? = nil
         var contextWindow: Int? = nil
         var contextPercent: Double? = nil
-        var inputTokens: Int = 0
-        var outputTokens: Int = 0
-        var cacheTokens: Int = 0
-        var cost: Double = 0
+        /// Weekly allowance left per provider, as Pi's usage status saved it.
+        /// Nil from mirrors older than weekly limits.
+        var limits: [Limit]? = nil
     }
     struct Command: Codable, Sendable, Equatable {
         let name: String

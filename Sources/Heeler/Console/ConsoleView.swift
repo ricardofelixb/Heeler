@@ -1393,7 +1393,18 @@ struct ConsoleView: View {
 
     @ViewBuilder
     private var agentHostIssueRows: some View {
-        if !visibleHostIssues.isEmpty {
+        if !visibleHostIssues.isEmpty,
+           visibleHostIssues.allSatisfy({ $0.tone == .pending || $0.tone == .reconnecting })
+        {
+            // Hosts on their way say nothing more than a spinner would;
+            // only a Host that needs you gets words.
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .accessibilityLabel("Connecting to Hosts")
+        } else if !visibleHostIssues.isEmpty {
             // On the Agent rows' edges; the list's own separator sets it
             // apart from the first Agent.
             ConsoleHostIssueList(
@@ -1414,12 +1425,11 @@ struct ConsoleView: View {
         let agents = listedAgents
         ForEach(agents) { agent in
             agentRow(agent)
-                // Right under an iPad sidebar's bar, a rule over the
-                // first row would crowd it.
+                // Rules only between rows: none over the first or under the last.
                 .listRowSeparator(
-                    usesSidebarNavigation && visibleHostIssues.isEmpty
-                        && agent.id == agents.first?.id ? .hidden : .automatic,
+                    visibleHostIssues.isEmpty && agent.id == agents.first?.id ? .hidden : .automatic,
                     edges: .top)
+                .listRowSeparator(agent.id == agents.last?.id ? .hidden : .automatic, edges: .bottom)
         }
     }
 

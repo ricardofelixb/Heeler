@@ -17,8 +17,10 @@ actor DemoPiConversation {
                   thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh"]),
             .init(provider: "openai", id: "gpt-mini", name: "GPT Mini"),
         ],
-        usage: .init(contextTokens: 48_200, contextWindow: 200_000, contextPercent: 24.1,
-                     inputTokens: 182_400, outputTokens: 12_900, cacheTokens: 640_000, cost: 1.84),
+        usage: .init(contextTokens: 48_200, contextWindow: 200_000, contextPercent: 24.1, limits: [
+            .init(label: "Claude", left: 84, resetsAt: (Date.now.timeIntervalSince1970 + 3 * 86_400) * 1000),
+            .init(label: "Codex", left: 58, resetsAt: (Date.now.timeIntervalSince1970 + 6 * 86_400) * 1000),
+        ]),
         commands: [.init(name: "compact", description: "Manually compact the session context"),
                    .init(name: "new", description: "Start a new session"),
                    .init(name: "live", description: "Talk to Pi")])

@@ -41,9 +41,12 @@ struct PiAgentSheet: View {
                                 current: settings.thinking ?? model.thinkingLevels[0]
                             ) { store.send(.setThinking($0)) }
                         }
+                        if let usage = settings.usage { PiContextRow(usage: usage) }
                     }
-                    if let usage = settings.usage {
-                        PiUsageSection(usage: usage)
+                    if let limits = settings.usage?.limits, !limits.isEmpty {
+                        Section("Weekly Usage") {
+                            ForEach(limits, id: \.label) { PiLimitRow(limit: $0) }
+                        }
                     }
                 }
                 if let host, let screen, showsScreen(screen, of: host) {
@@ -170,42 +173,46 @@ private struct PiThinkingRow: View {
     }
 }
 
-private struct PiUsageSection: View {
+/// How full the model's context is, as one slim bar.
+private struct PiContextRow: View {
     let usage: PiConversationSettings.Usage
 
     var body: some View {
-        Section("Usage") {
-            if let window = usage.contextWindow, window > 0 {
-                VStack(alignment: .leading, spacing: 6) {
-                    LabeledContent("Context") {
-                        Text(verbatim: contextText(window: window))
-                    }
-                    if let percent = usage.contextPercent {
-                        ProgressView(value: min(max(percent / 100, 0), 1))
-                    }
+        if let window = usage.contextWindow, window > 0 {
+            let fraction = usage.contextPercent.map { min(max($0 / 100, 0), 1) }
+                ?? usage.contextTokens.map { min(Double($0) / Double(window), 1) }
+            VStack(alignment: .leading, spacing: 6) {
+                LabeledContent("Context") {
+                    Text(verbatim: fraction.map { "\(Int(($0 * 100).rounded()))% of \(compact(window))" }
+                        ?? compact(window))
                 }
-            }
-            LabeledContent("Tokens") {
-                Text(verbatim: "\(compact(usage.inputTokens)) in · \(compact(usage.outputTokens)) out")
-            }
-            if usage.cacheTokens > 0 {
-                LabeledContent("Cache") { Text(verbatim: compact(usage.cacheTokens)) }
-            }
-            if usage.cost > 0 {
-                LabeledContent("Cost") {
-                    Text(usage.cost, format: .currency(code: "USD").precision(.fractionLength(2)))
+                if let fraction {
+                    ProgressView(value: fraction)
+                        .tint(fraction > 0.8 ? .orange : .accentColor)
                 }
             }
         }
     }
 
-    private func contextText(window: Int) -> String {
-        let used = usage.contextTokens.map(compact) ?? "—"
-        let percent = usage.contextPercent.map { " · \(Int($0.rounded()))%" } ?? ""
-        return "\(used) / \(compact(window))\(percent)"
-    }
-
     private func compact(_ value: Int) -> String {
         value.formatted(.number.notation(.compactName).precision(.significantDigits(1...3)))
+    }
+}
+
+/// A provider's weekly allowance: what's left, and when it starts over.
+private struct PiLimitRow: View {
+    let limit: PiConversationSettings.Limit
+
+    var body: some View {
+        LabeledContent(limit.label) {
+            Text(verbatim: "\(limit.left)% left · \(resetsIn)")
+                .monospacedDigit()
+                .foregroundStyle(limit.left < 15 ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+        }
+    }
+
+    private var resetsIn: String {
+        let hours = max(0, Int((limit.resetsAt / 1000 - Date.now.timeIntervalSince1970) / 3600 + 0.5))
+        return hours >= 24 ? "\(Int((Double(hours) / 24).rounded()))d" : "\(hours)h"
     }
 }

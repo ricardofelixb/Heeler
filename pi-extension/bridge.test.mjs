@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { createConnection } from "node:net";
 import { join } from "node:path";
-import { PiMirrorBridge, endpoint, conversationRows, sessionUsage, thinkingLevels } from "./bridge.mjs";
+import { PiMirrorBridge, endpoint, conversationRows, weeklyLimits, thinkingLevels } from "./bridge.mjs";
 
 async function fixture(t) {
   const home = await mkdtemp(join(tmpdir(), "heeler-pi-test-"));
@@ -130,10 +130,21 @@ test("thinking levels and usage follow pi-ai's rules", () => {
   assert.deepEqual(thinkingLevels({ reasoning: false }), ["off"]);
   assert.deepEqual(thinkingLevels({ reasoning: true, thinkingLevelMap: { minimal: null, xhigh: "xhigh" } }),
     ["off", "low", "medium", "high", "xhigh"]);
-  assert.deepEqual(sessionUsage([
-    { type: "message", message: { role: "assistant", usage: { input: 10, output: 5, cacheRead: 2, cacheWrite: 1, cost: { total: 0.5 } } } },
-    { type: "message", message: { role: "user", content: "x" } },
-  ]), { inputTokens: 10, outputTokens: 5, cacheTokens: 3, cost: 0.5 });
+});
+
+test("weekly limits come from usage-status's saved files, per Claude account", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "heeler-limits-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await writeFile(join(directory, "pi-usage-status-openai-codex.json"),
+    JSON.stringify({ at: 1, value: { left: 58, resetsAt: 2000 } }));
+  await writeFile(join(directory, "pi-usage-status-claude-bridge-banx.json"),
+    JSON.stringify({ at: 1, value: { left: 84, resetsAt: 1000 } }));
+  await writeFile(join(directory, "pi-usage-status-claude-bridge.json"), "not json");
+  assert.deepEqual(weeklyLimits(directory, { CLAUDE_CONFIG_DIR: "/home/x/.claude-accounts/banx" }), [
+    { label: "Claude (banx)", left: 84, resetsAt: 1000 },
+    { label: "Codex", left: 58, resetsAt: 2000 },
+  ]);
+  assert.deepEqual(weeklyLimits(directory, {}), [{ label: "Codex", left: 58, resetsAt: 2000 }]);
 });
 
 test("desktop tree navigation replaces the transcript even within the same session file", options, async (t) => {

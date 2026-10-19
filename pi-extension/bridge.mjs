@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, lstat, chmod, unlink } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { createServer, createConnection } from "node:net";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 const hash = (text) => createHash("sha256").update(text).digest("hex");
 export const MAX_LINE_BYTES = 1_048_576;
@@ -60,18 +61,22 @@ export function thinkingLevels(model) {
 const modelInfo = (model) => model ? { provider: String(model.provider), id: String(model.id),
   name: String(model.name || model.id), thinkingLevels: thinkingLevels(model) } : null;
 
-/** Token and cost totals for the session, from each assistant reply's reported usage. */
-export function sessionUsage(entries) {
-  const total = { inputTokens: 0, outputTokens: 0, cacheTokens: 0, cost: 0 };
-  for (const entry of entries) {
-    const usage = entry.type === "message" && entry.message.role === "assistant" ? entry.message.usage : undefined;
-    if (!usage) continue;
-    total.inputTokens += usage.input ?? 0;
-    total.outputTokens += usage.output ?? 0;
-    total.cacheTokens += (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-    total.cost += usage.cost?.total ?? 0;
-  }
-  return total;
+// Weekly limits as the usage-status extension saves them for every Pi on the machine.
+const LIMIT_PROVIDERS = [["claude-bridge", "Claude"], ["openai-codex", "Codex"]];
+
+/** Each provider's weekly remaining share, read from usage-status's shared files; no requests of our own. */
+export function weeklyLimits(directory = tmpdir(), env = process.env) {
+  return LIMIT_PROVIDERS.flatMap(([provider, label]) => {
+    const account = provider === "claude-bridge" && env.CLAUDE_CONFIG_DIR ? basename(env.CLAUDE_CONFIG_DIR) : undefined;
+    try {
+      const file = join(directory, `pi-usage-status-${provider}${account ? `-${account}` : ""}.json`);
+      const value = JSON.parse(readFileSync(file, "utf8"))?.value;
+      if (typeof value?.left !== "number" || typeof value?.resetsAt !== "number") return [];
+      return [{ label: account ? `${label} (${account})` : label, left: value.left, resetsAt: value.resetsAt }];
+    } catch {
+      return [];
+    }
+  });
 }
 
 // Must match PiConversationEndpoint in Swift. No remote shell interpolation.
@@ -236,7 +241,7 @@ export class PiMirrorBridge {
       thinking: api.getThinkingLevel?.() ?? this.ctx.thinkingLevel ?? null,
       models: this.models().map(modelInfo),
       usage: { contextTokens: context?.tokens ?? null, contextWindow: context?.contextWindow ?? null,
-        contextPercent: context?.percent ?? null, ...sessionUsage(this.ctx.sessionManager.getEntries()) },
+        contextPercent: context?.percent ?? null, limits: weeklyLimits(this.options.tmpdir, this.options.env) },
       commands: [...BUILTIN_COMMANDS, ...extra].slice(0, MAX_COMMANDS),
     };
   }

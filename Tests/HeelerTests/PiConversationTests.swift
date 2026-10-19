@@ -26,9 +26,39 @@ struct PiConversationTests {
         let next = PiConversationRow(id: "next", role: "user", text: "Again")
         let third = PiConversationRow(id: "tool3", role: "tool", text: "bash", state: "error")
         #expect(PiConversationItem.grouped([user, first, commentary, second, reply, next, third]) == [
-            .message(user), .tools(id: first.id, rows: [first, second]),
-            .message(commentary), .message(reply), .message(next), .tools(id: third.id, rows: [third])
+            .message(user, id: user.id), .tools(id: first.id, rows: [first, second]),
+            .message(commentary, id: commentary.id), .message(reply, id: reply.id),
+            .message(next, id: next.id), .tools(id: third.id, rows: [third])
         ])
+    }
+
+    @Test func aFinishedReplyKeepsTheStreamedOnesPlaceAndOnlyNewMessagesPop() throws {
+        let store = store()
+        let earlier = PiConversationRow(id: "earlier", role: "user", text: "Hi")
+        try store.apply(snapshot(rows: [earlier]))
+        #expect(store.freshUserIDs.isEmpty)
+
+        let queued = PiConversationRow(id: "queued:1", role: "user", text: "Go", state: "queued")
+        try store.apply(.init(type: "message", version: 1, epoch: "bridge", revision: 1,
+                              sessionID: "session", row: queued))
+        #expect(store.freshUserIDs == ["queued:1"])
+
+        let live = PiConversationRow(id: PiConversationRow.streamingID, role: "assistant", text: "Wor")
+        try store.apply(.init(type: "message", version: 1, epoch: "bridge", revision: 2,
+                              sessionID: "session", row: live))
+        let streamed = store.displayID(live)
+        #expect(streamed.hasPrefix("live:"))
+
+        let taken = PiConversationRow(id: "user2", role: "user", text: "Go")
+        let reply = PiConversationRow(id: "reply", role: "assistant", text: "Working")
+        try store.apply(snapshot(revision: 3, rows: [earlier, taken, reply]))
+        #expect(store.displayID(reply) == streamed)
+        #expect(store.freshUserIDs == ["queued:1"])
+
+        // Another session, or a reconnect, starts the screen afresh.
+        try store.apply(snapshot(session: "other", revision: 0, rows: [reply]))
+        #expect(store.displayID(reply) == "reply")
+        #expect(store.freshUserIDs.isEmpty)
     }
 
     @Test func truncatedToolHistoryAndStreamingUpdatesKeepStableGroupIdentity() {

@@ -64,9 +64,9 @@ struct PiConversationView: View {
                     Text("Recent conversation · older history in Terminal")
                         .font(.caption).foregroundStyle(secondary)
                 }
-                ForEach(PiConversationItem.grouped(store.rows)) { item in
+                ForEach(PiConversationItem.grouped(store.rows, displayID: store.displayID)) { item in
                     switch item {
-                    case .message(let row): message(row)
+                    case .message(let row, let id): message(row, displayID: id)
                     case .tools(let id, let rows): tools(id: id, rows: rows)
                     }
                 }
@@ -197,7 +197,7 @@ struct PiConversationView: View {
                 }
             })) {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(rows) { message($0) }
+                ForEach(rows) { message($0, displayID: $0.id) }
             }
             .padding(.top, 12)
         } label: {
@@ -207,19 +207,18 @@ struct PiConversationView: View {
                     Image(systemName: rows.contains(where: { $0.state == "error" })
                           ? "exclamationmark.circle" : "checkmark")
                 }
-                Text("Tools · \(rows.count)").font(.subheadline)
+                Text("Tools · \(rows.count)").font(.footnote)
                 Spacer(minLength: 0)
                 let failures = rows.filter { $0.state == "error" }.count
                 if failures > 0 { Text("\(failures) failed").font(.caption).foregroundStyle(.red) }
             }
             .foregroundStyle(secondary)
         }
+        // Quiet, like a footnote: no card, just the line and its disclosure.
         .tint(secondary)
-        .padding(12)
-        .background(surface, in: RoundedRectangle(cornerRadius: 12))
     }
 
-    @ViewBuilder private func message(_ row: PiConversationRow) -> some View {
+    @ViewBuilder private func message(_ row: PiConversationRow, displayID: String) -> some View {
         if row.role == "tool" {
             DisclosureGroup {
                 Text(verbatim: row.detail ?? "")
@@ -245,6 +244,7 @@ struct PiConversationView: View {
                     Text(verbatim: row.text).textSelection(.enabled)
                         .padding(14).background(surface, in: RoundedRectangle(cornerRadius: 18))
                         .opacity(isQueued ? 0.55 : 1)
+                        .modifier(PiPopIn(isFresh: store.freshUserIDs.contains(row.id)))
                 }
                 if isQueued {
                     Label("Queued", systemImage: "clock")
@@ -255,9 +255,59 @@ struct PiConversationView: View {
         } else if row.role == "notice" {
             Text(verbatim: row.text).font(.caption).foregroundStyle(secondary).textSelection(.enabled)
         } else {
-            Text(.init(row.text)).textSelection(.enabled)
+            // A reply seen streaming keeps revealing; history shows at once.
+            PiStreamingText(text: row.text, reveals: displayID.hasPrefix("live:"))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+/// A reply as Pi writes it. The mirror sends text in bursts; this lets each
+/// burst run in over a moment, so the reply reads as written rather than
+/// jumping a paragraph at a time.
+private struct PiStreamingText: View {
+    let text: String
+    /// Characters on screen; nil shows the whole text.
+    @State private var shown: Int?
+
+    init(text: String, reveals: Bool) {
+        self.text = text
+        _shown = State(initialValue: reveals ? 0 : nil)
+    }
+
+    var body: some View {
+        Text(.init(shown.map { String(text.prefix($0)) } ?? text))
+            .textSelection(.enabled)
+            .task(id: text) {
+                guard var count = shown else { return }
+                let total = text.count
+                // About a quarter second per burst, whatever its length.
+                let step = max(1, (total - count) / 15)
+                while count < total, !Task.isCancelled {
+                    count = min(total, count + step)
+                    shown = count
+                    try? await Task.sleep(for: .milliseconds(16))
+                }
+            }
+    }
+}
+
+/// Your message landing: a small, quick spring up from where it sits.
+private struct PiPopIn: ViewModifier {
+    @State private var isIn: Bool
+
+    init(isFresh: Bool) {
+        _isIn = State(initialValue: !isFresh)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isIn ? 1 : 0.88, anchor: .bottomTrailing)
+            .opacity(isIn ? 1 : 0)
+            .onAppear {
+                guard !isIn else { return }
+                withAnimation(.spring(duration: 0.35, bounce: 0.3)) { isIn = true }
+            }
     }
 }
 
@@ -304,17 +354,20 @@ private struct SystemScrollEdgeHidden: ViewModifier {
 /// Presentation only: keep authoritative messages in order, collecting every
 /// tool call between user messages into the first tools row of that reply.
 enum PiConversationItem: Equatable, Identifiable {
-    case message(PiConversationRow)
+    case message(PiConversationRow, id: String)
     case tools(id: String, rows: [PiConversationRow])
 
     var id: String {
         switch self {
-        case .message(let row): row.id
+        case .message(_, let id): id
         case .tools(let id, _): "tools-\(id)"
         }
     }
 
-    static func grouped(_ rows: [PiConversationRow]) -> [Self] {
+    static func grouped(
+        _ rows: [PiConversationRow],
+        displayID: (PiConversationRow) -> String = \.id
+    ) -> [Self] {
         var items: [Self] = []
         var toolIndex: Int?
         for row in rows {
@@ -328,7 +381,7 @@ enum PiConversationItem: Equatable, Identifiable {
                     items.append(.tools(id: row.id, rows: [row]))
                 }
             } else {
-                items.append(.message(row))
+                items.append(.message(row, id: displayID(row)))
             }
         }
         return items

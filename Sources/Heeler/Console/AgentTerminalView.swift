@@ -955,8 +955,9 @@ struct AgentTerminalView: View {
                         isShowingWorktree = true
                     }
                 } : nil,
-            renameAgent: { isRenamingAgent = true },
-            renameWorkspace: { isRenamingWorkspace = true },
+            // Pi's Agent sheet renames; other Agents keep it in this menu.
+            renameAgent: piConversation == nil ? { isRenamingAgent = true } : nil,
+            renameWorkspace: piConversation == nil ? { isRenamingWorkspace = true } : nil,
             closeAgent: { isConfirmingClose = true },
             backToConsole: { backToConsole() },
             closeConfirmation: anchorsClose
@@ -1155,7 +1156,7 @@ struct AgentTerminalView: View {
                     store: piConversation,
                     avatar: WorkspaceAgentPresentation.avatar(for: agent.id),
                     name: WorkspaceAgentPresentation.title(for: agent.agent),
-                    actions: backHeaderActions,
+                    actions: backHeaderActions + renameActions,
                     host: console.host(for: agent.hostID))
             }
         }
@@ -1248,6 +1249,18 @@ struct AgentTerminalView: View {
                 title: "Changes", systemImage: "arrow.triangle.branch", perform: showChanges))
         }
         return actions
+    }
+
+    /// Renaming, offered by the Agent sheet rather than the Composer's menu.
+    private var renameActions: [AgentDetailHeaderAction] {
+        [
+            AgentDetailHeaderAction(title: "Rename Agent", systemImage: "pencil") {
+                isRenamingAgent = true
+            },
+            AgentDetailHeaderAction(title: "Rename Workspace", systemImage: "pencil.line") {
+                isRenamingWorkspace = true
+            },
+        ]
     }
 
     /// Puts away the system or Tools keyboard, leaving the Composer in place.

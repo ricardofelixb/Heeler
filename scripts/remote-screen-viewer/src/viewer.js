@@ -233,6 +233,9 @@ window.heelerScreen = {
       shared: true,
       credentials: { password: options.password ?? "" },
     });
+    // Only no auth or a VNC password: macOS offers Apple's account login
+    // first, which would want the user's Mac password. Pinned noVNC 1.7.0.
+    rfb._isSupportedSecurityType = (type) => type === 1 || type === 2;
     rfb.viewOnly = options.viewOnly ?? true;
     // A click would focus the canvas and close the keyboard.
     rfb.focusOnClick = false;
@@ -252,7 +255,14 @@ window.heelerScreen = {
       if (!closedByApp && !failed) post({ type: "disconnected" });
     });
     rfb.addEventListener("credentialsrequired", () => {
-      rfb?.sendCredentials({ password: options.password ?? "" });
+      if (!options.password) {
+        // The app asks the user rather than trying an empty password.
+        failed = true;
+        post({ type: "error", reason: "auth" });
+        teardown();
+        return;
+      }
+      rfb?.sendCredentials({ password: options.password });
     });
     rfb.addEventListener("securityfailure", () => {
       failed = true;

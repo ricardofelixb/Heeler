@@ -19,11 +19,23 @@ final class HostLoopbackStream: Sendable {
 }
 
 extension HeelerSSHTransport {
-    /// A dedicated connection to the Host, carrying one stream to `port` on
-    /// its loopback.
-    static func openLoopbackStream(
-        settings: SSHTransportSettings, port: UInt16
-    ) async throws -> HostLoopbackStream {
-        try await connect(settings: settings).openLoopbackStream(port: port)
+    /// A dedicated connection to the Host that finds its VNC server, then
+    /// carries one stream to it. Nil, connection closed, when there is none.
+    static func openScreen(
+        settings: SSHTransportSettings
+    ) async throws -> (probe: RemoteScreenProbe, stream: HostLoopbackStream)? {
+        let transport = try await connect(settings: settings)
+        let probe: RemoteScreenProbe?
+        do {
+            probe = try await transport.probeScreen()
+        } catch {
+            try? await transport.close()
+            throw error
+        }
+        guard let probe else {
+            try? await transport.close()
+            return nil
+        }
+        return (probe, try await transport.openLoopbackStream(port: probe.port))
     }
 }

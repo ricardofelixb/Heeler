@@ -10,22 +10,20 @@ private struct RemoteScreenWebView: UIViewRepresentable {
 }
 
 /// A Host's screen at a glance, inside the Agent sheet: live but untouchable.
-/// Tapping it asks for full control.
+/// Tapping it asks for full control. The sheet owns the session, so it can
+/// leave the section out for Hosts without a screen.
 struct RemoteScreenPreview: View {
-    let host: Host
-    let settings: RemoteScreenSettings
+    let hostName: String
+    let session: RemoteScreenSession
     let onOpen: () -> Void
-    @State private var session: RemoteScreenSession?
 
     var body: some View {
         Button(action: onOpen) {
             ZStack {
                 Color.black
-                if let session {
-                    RemoteScreenWebView(session: session)
-                        .allowsHitTesting(false)
-                    RemoteScreenStatus(session: session, compact: true)
-                }
+                RemoteScreenWebView(session: session)
+                    .allowsHitTesting(false)
+                RemoteScreenStatus(session: session, compact: true)
             }
             .aspectRatio(16 / 9, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -39,14 +37,7 @@ struct RemoteScreenPreview: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Control \(host.name)'s screen")
-        .onAppear {
-            session = RemoteScreenSession(host: host, settings: settings, viewOnly: true)
-        }
-        .onDisappear {
-            session?.stop()
-            session = nil
-        }
+        .accessibilityLabel("Control \(hostName)'s screen")
     }
 }
 
@@ -113,6 +104,18 @@ private struct RemoteScreenStatus: View {
                 }
             }
             .foregroundStyle(.white.opacity(0.7))
+        case .unavailable:
+            Text("No screen found on this Host.")
+                .font(.footnote)
+                .foregroundStyle(.white.opacity(0.8))
+        case .needsPassword:
+            if compact {
+                Label("Enter the screen's password", systemImage: "lock")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.8))
+            } else {
+                RemoteScreenPasswordPrompt(session: session)
+            }
         case .failed(let message):
             VStack(spacing: 10) {
                 Text(message)
@@ -130,57 +133,37 @@ private struct RemoteScreenStatus: View {
     }
 }
 
-/// The one-time setup of a Host's screen: where its VNC server listens on
-/// the Host itself, and its password.
-struct RemoteScreenSetupForm: View {
-    let host: Host
-    var current: RemoteScreenSettings?
-    let onSave: (RemoteScreenSettings?) -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var port = ""
+/// Asked once, for servers that keep their password where the Host's
+/// user can't read it, such as macOS Screen Sharing.
+private struct RemoteScreenPasswordPrompt: View {
+    let session: RemoteScreenSession
     @State private var password = ""
+    @FocusState private var isFocused: Bool
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Port", text: $port, prompt: Text(verbatim: "5900"))
-                        .keyboardType(.numberPad)
-                    SecureField("VNC password", text: $password)
-                } footer: {
-                    Text("The VNC server on \(host.name) itself, reached through SSH. It doesn't need to listen on the network.")
-                }
-                if current != nil {
-                    Section {
-                        Button("Remove Screen", role: .destructive) {
-                            onSave(nil)
-                            dismiss()
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Screen")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        onSave(RemoteScreenSettings(port: parsedPort ?? 5900, password: password))
-                        dismiss()
-                    }
-                    .disabled(!port.isEmpty && parsedPort == nil)
-                }
-            }
+        VStack(spacing: 12) {
+            Text("This screen needs its VNC password.")
+                .font(.footnote)
+                .foregroundStyle(.white.opacity(0.8))
+            SecureField("Password", text: $password)
+                .textContentType(.password)
+                .focused($isFocused)
+                .submitLabel(.go)
+                .onSubmit(submit)
+                .padding(10)
+                .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                .frame(maxWidth: 280)
+            Button("Connect", action: submit)
+                .buttonStyle(.bordered)
+                .tint(.white)
+                .disabled(password.isEmpty)
         }
-        .onAppear {
-            port = current.map { String($0.port) } ?? ""
-            password = current?.password ?? ""
-        }
+        .padding(24)
+        .onAppear { isFocused = true }
     }
 
-    private var parsedPort: UInt16? {
-        UInt16(port.trimmingCharacters(in: .whitespaces)).flatMap { $0 > 0 ? $0 : nil }
+    private func submit() {
+        guard !password.isEmpty else { return }
+        session.submitPassword(password)
     }
 }

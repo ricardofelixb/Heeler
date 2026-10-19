@@ -8,13 +8,13 @@ struct PiAgentSheet: View {
     let avatar: Image
     let name: String
     let actions: [AgentDetailHeaderAction]
-    /// The Agent's Host, whose screen the sheet can show once it is set up.
+    /// The Agent's Host, whose screen the sheet shows when it has one.
     var host: Host?
     var screenSettings = RemoteScreenSettingsStore()
     @Environment(\.dismiss) private var dismiss
-    @State private var screen: RemoteScreenSettings?
+    /// The preview's session; full control replaces it, one connection at a time.
+    @State private var screen: RemoteScreenSession?
     @State private var isScreenPresented = false
-    @State private var isScreenSetupPresented = false
 
     var body: some View {
         NavigationStack {
@@ -46,36 +46,22 @@ struct PiAgentSheet: View {
                         PiUsageSection(usage: usage)
                     }
                 }
-                if let host, let screen {
-                    Section {
-                        // Only one connection at a time: full control replaces the preview.
-                        if !isScreenPresented {
-                            RemoteScreenPreview(host: host, settings: screen) {
-                                isScreenPresented = true
-                            }
-                            .listRowInsets(EdgeInsets())
+                if let host, let screen, showsScreen(screen, of: host) {
+                    Section("Screen") {
+                        RemoteScreenPreview(hostName: host.name, session: screen) {
+                            screen.stop()
+                            self.screen = nil
+                            isScreenPresented = true
                         }
-                    } header: {
-                        HStack {
-                            Text("Screen")
-                            Spacer()
-                            Button("Edit") { isScreenSetupPresented = true }
-                                .font(.footnote)
-                                .textCase(nil)
-                        }
+                        .listRowInsets(EdgeInsets())
                     }
                 }
-                if !actions.isEmpty || (host != nil && screen == nil) {
+                if !actions.isEmpty {
                     Section {
                         ForEach(actions) { action in
                             Button(action.title, systemImage: action.systemImage) {
                                 dismiss()
                                 action.perform()
-                            }
-                        }
-                        if host != nil, screen == nil {
-                            Button("Set Up Screen", systemImage: "display") {
-                                isScreenSetupPresented = true
                             }
                         }
                     }
@@ -84,26 +70,35 @@ struct PiAgentSheet: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
         }
-        .onAppear {
-            screen = host.flatMap { screenSettings.settings(for: $0.id) }
+        .onAppear(perform: startPreview)
+        .onDisappear {
+            screen?.stop()
+            screen = nil
         }
-        .sheet(isPresented: $isScreenSetupPresented) {
+        .fullScreenCover(isPresented: $isScreenPresented, onDismiss: startPreview) {
             if let host {
-                RemoteScreenSetupForm(host: host, current: screen) { updated in
-                    try? screenSettings.save(updated, for: host.id)
-                    screen = screenSettings.settings(for: host.id)
-                }
-            }
-        }
-        .fullScreenCover(isPresented: $isScreenPresented) {
-            if let host, let screen {
                 RemoteScreenFullView(title: host.name) {
-                    RemoteScreenSession(host: host, settings: screen, viewOnly: false)
+                    RemoteScreenSession(host: host, store: screenSettings, viewOnly: false)
                 }
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    private func startPreview() {
+        guard let host, screen == nil, !isScreenPresented else { return }
+        screen = RemoteScreenSession(host: host, store: screenSettings, viewOnly: true)
+    }
+
+    /// Hosts without a screen show no section; while the Host is asked
+    /// again, it keeps the place it had last time.
+    private func showsScreen(_ screen: RemoteScreenSession, of host: Host) -> Bool {
+        switch screen.phase {
+        case .unavailable: false
+        case .connecting: screenSettings.hadScreen(host.id) ?? false
+        default: true
+        }
     }
 
     /// The session's scoped models, one inline section per provider.

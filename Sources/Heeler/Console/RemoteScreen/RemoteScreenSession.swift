@@ -11,27 +11,33 @@ final class RemoteScreenSession {
     enum Phase: Equatable {
         case connecting
         case live
+        /// The Host runs no VNC server.
+        case unavailable
+        /// The server wants a password the Host doesn't let us read.
+        case needsPassword
         case failed(String)
     }
+
+    typealias Opener = @Sendable () async throws -> (probe: RemoteScreenProbe, stream: HostLoopbackStream)?
 
     private(set) var phase: Phase = .connecting
     private(set) var isKeyboardOpen = false
     @ObservationIgnored let webView: WKWebView
-    @ObservationIgnored private let password: String
+    @ObservationIgnored private let hostID: Host.ID
+    @ObservationIgnored private let store: RemoteScreenSettingsStore
     @ObservationIgnored private let viewOnly: Bool
-    @ObservationIgnored private let open: @Sendable () async throws -> HostLoopbackStream
+    @ObservationIgnored private let open: Opener
     @ObservationIgnored private var stream: HostLoopbackStream?
     @ObservationIgnored private var pump: RemoteScreenPump?
     @ObservationIgnored private var opening: Task<Void, Never>?
     @ObservationIgnored private var isPageReady = false
     @ObservationIgnored private var generation = 0
+    /// Whether this attempt's password came from the Host itself.
+    @ObservationIgnored private var passwordFromHost = false
 
-    init(
-        password: String,
-        viewOnly: Bool,
-        open: @escaping @Sendable () async throws -> HostLoopbackStream
-    ) {
-        self.password = password
+    init(hostID: Host.ID, store: RemoteScreenSettingsStore, viewOnly: Bool, open: @escaping Opener) {
+        self.hostID = hostID
+        self.store = store
         self.viewOnly = viewOnly
         self.open = open
         let configuration = WKWebViewConfiguration()
@@ -52,9 +58,9 @@ final class RemoteScreenSession {
         }
     }
 
-    /// Opens a Host's screen over its own SSH connection.
-    convenience init(host: Host, settings: RemoteScreenSettings, viewOnly: Bool) {
-        self.init(password: settings.password, viewOnly: viewOnly) {
+    /// Finds and opens a Host's screen over its own SSH connection.
+    convenience init(host: Host, store: RemoteScreenSettingsStore, viewOnly: Bool) {
+        self.init(hostID: host.id, store: store, viewOnly: viewOnly) {
             let credentials: SSHCredentials
             do {
                 credentials = try HostCredentialsProvider().credentials(for: host)
@@ -62,10 +68,9 @@ final class RemoteScreenSession {
                 throw TransportError.authenticationFailed
             }
             let policy = HostKeyPolicy(knownHosts: UserDefaultsKnownHostsStore.shared) { _ in false }
-            return try await HeelerSSHTransport.openLoopbackStream(
+            return try await HeelerSSHTransport.openScreen(
                 settings: SSHTransportSettings(
-                    host: host, credentials: credentials, hostKeyPolicy: policy),
-                port: settings.port)
+                    host: host, credentials: credentials, hostKeyPolicy: policy))
         }
     }
 
@@ -75,15 +80,21 @@ final class RemoteScreenSession {
         connect()
     }
 
+    /// Remembers the password the user typed and tries again with it.
+    func submitPassword(_ password: String) {
+        try? store.savePassword(password, for: hostID)
+        retry()
+    }
+
     func toggleKeyboard() {
-        webView.evaluateJavaScript("window.heelerScreen.toggleKeyboard()", completionHandler: nil)
+        webView.evaluateJavaScript("window.heelerScreen.toggleKeyboard()")
     }
 
     func stop() {
         generation += 1
         opening?.cancel()
         opening = nil
-        if isPageReady { webView.evaluateJavaScript("window.heelerScreen.disconnect()", completionHandler: nil) }
+        if isPageReady { webView.evaluateJavaScript("window.heelerScreen.disconnect()") }
         endStream()
     }
 
@@ -103,12 +114,21 @@ final class RemoteScreenSession {
         case "keyboard":
             isKeyboardOpen = body["open"] as? Bool ?? false
         case "error":
-            phase = .failed(
-                body["reason"] as? String == "auth"
-                    ? "The VNC password was refused." : "The screen could not be shown.")
             endStream()
+            guard body["reason"] as? String == "auth" else {
+                phase = .failed("The screen could not be shown.")
+                return
+            }
+            if passwordFromHost {
+                phase = .failed("The VNC password was refused.")
+            } else {
+                // A typed password that no longer works is asked for again.
+                try? store.savePassword(nil, for: hostID)
+                phase = .needsPassword
+            }
         case "disconnected":
             if case .failed = phase { break }
+            if phase == .needsPassword { break }
             phase = .failed("The screen disconnected.")
             endStream()
         default:
@@ -122,30 +142,38 @@ final class RemoteScreenSession {
         let current = generation
         phase = .connecting
         isKeyboardOpen = false
-        webView.callAsyncJavaScript(
-            "window.heelerScreen.connect(options)",
-            arguments: ["options": ["password": password, "viewOnly": viewOnly]],
-            in: nil, in: .page, completionHandler: nil)
         let open = self.open
         opening = Task { [weak self] in
             do {
-                let stream = try await open()
+                let opened = try await open()
                 guard let self, self.generation == current, !Task.isCancelled else {
-                    Darwin.close(stream.descriptor)
-                    await stream.finish()
+                    if let opened {
+                        Darwin.close(opened.stream.descriptor)
+                        await opened.stream.finish()
+                    }
                     return
                 }
-                self.attach(stream, generation: current)
+                self.store.setHadScreen(opened != nil, for: self.hostID)
+                guard let opened else {
+                    self.phase = .unavailable
+                    return
+                }
+                self.attach(opened.stream, probe: opened.probe, generation: current)
             } catch {
                 guard let self, self.generation == current else { return }
                 self.phase = .failed(Self.message(for: error))
-                self.webView.evaluateJavaScript("window.heelerScreen.ended()", completionHandler: nil)
             }
         }
     }
 
-    private func attach(_ stream: HostLoopbackStream, generation current: Int) {
+    private func attach(_ stream: HostLoopbackStream, probe: RemoteScreenProbe, generation current: Int) {
         self.stream = stream
+        passwordFromHost = probe.password != nil
+        let password = probe.password ?? store.password(for: hostID) ?? ""
+        webView.callAsyncJavaScript(
+            "window.heelerScreen.connect(options)",
+            arguments: ["options": ["password": password, "viewOnly": viewOnly]],
+            in: nil, in: .page, completionHandler: nil)
         let pump = RemoteScreenPump(
             descriptor: stream.descriptor,
             onData: { [weak self] data in
@@ -160,15 +188,18 @@ final class RemoteScreenSession {
             onEnd: { [weak self] in
                 Task { @MainActor in
                     guard let self, self.generation == current else { return }
-                    self.webView.evaluateJavaScript("window.heelerScreen.ended()", completionHandler: nil)
-                    if case .failed = self.phase { return }
+                    self.webView.evaluateJavaScript("window.heelerScreen.ended()")
+                    switch self.phase {
+                    case .failed, .needsPassword: return
+                    default: break
+                    }
                     self.phase = .failed("The screen disconnected.")
                     self.endStream()
                 }
             })
         self.pump = pump
         pump.start()
-        webView.evaluateJavaScript("window.heelerScreen.opened()", completionHandler: nil)
+        webView.evaluateJavaScript("window.heelerScreen.opened()")
     }
 
     private func endStream() {

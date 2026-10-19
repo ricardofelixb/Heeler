@@ -1,44 +1,44 @@
 import Foundation
 
-/// Where a Host's VNC server listens on its own loopback, and its password.
-/// Hosts without one show no Screen.
-struct RemoteScreenSettings: Equatable, Sendable {
-    var port: UInt16
-    var password: String
-}
-
-/// Per-Host screen settings: the port in user defaults, the password in the
-/// Keychain. Kept apart from the Host catalog, which the fork leaves as is.
+/// What the app remembers about each Host's screen: a password the user
+/// typed, for servers that keep theirs unreadable (macOS Screen Sharing), in
+/// the Keychain; and whether the Host had a screen last time, in user
+/// defaults, so the Agent sheet keeps its place while the Host is asked again.
+/// Kept apart from the Host catalog, which the fork leaves as is.
 struct RemoteScreenSettingsStore: Sendable {
-    /// The user defaults suite holding ports; nil is the app's standard one.
+    /// The user defaults suite; nil is the app's standard one.
     var suiteName: String?
     var secrets: any SecretStore = KeychainSecretStore(service: "dev.ricardofelixb.heeler.screen")
 
-    func settings(for hostID: Host.ID) -> RemoteScreenSettings? {
-        let port = defaults().integer(forKey: Self.portKey(hostID))
-        guard let port = UInt16(exactly: port), port > 0 else { return nil }
-        let password = (try? secrets.read(account: hostID.uuidString))
+    func password(for hostID: Host.ID) -> String? {
+        (try? secrets.read(account: hostID.uuidString))
             .flatMap { $0 }
-            .flatMap { String(data: $0, encoding: .utf8) } ?? ""
-        return RemoteScreenSettings(port: port, password: password)
+            .flatMap { String(data: $0, encoding: .utf8) }
     }
 
-    /// Saves `settings`, or forgets the Host's screen when nil.
-    func save(_ settings: RemoteScreenSettings?, for hostID: Host.ID) throws {
-        guard let settings else {
-            defaults().removeObject(forKey: Self.portKey(hostID))
+    /// Saves the typed password, or forgets it when nil.
+    func savePassword(_ password: String?, for hostID: Host.ID) throws {
+        guard let password else {
             try secrets.removeSecret(account: hostID.uuidString)
             return
         }
-        try secrets.write(Data(settings.password.utf8), account: hostID.uuidString)
-        defaults().set(Int(settings.port), forKey: Self.portKey(hostID))
+        try secrets.write(Data(password.utf8), account: hostID.uuidString)
+    }
+
+    /// Nil until the Host has been asked once.
+    func hadScreen(_ hostID: Host.ID) -> Bool? {
+        defaults().object(forKey: Self.availabilityKey(hostID)) as? Bool
+    }
+
+    func setHadScreen(_ hadScreen: Bool, for hostID: Host.ID) {
+        defaults().set(hadScreen, forKey: Self.availabilityKey(hostID))
     }
 
     private func defaults() -> UserDefaults {
         suiteName.flatMap(UserDefaults.init(suiteName:)) ?? .standard
     }
 
-    private static func portKey(_ hostID: Host.ID) -> String {
-        "remoteScreen.port.\(hostID.uuidString)"
+    private static func availabilityKey(_ hostID: Host.ID) -> String {
+        "remoteScreen.available.\(hostID.uuidString)"
     }
 }

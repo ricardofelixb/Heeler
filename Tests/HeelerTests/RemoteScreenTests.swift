@@ -4,7 +4,7 @@ import Testing
 @testable import Heeler
 
 struct RemoteScreenTests {
-    @Test func settingsKeepThePasswordInTheSecretStoreAndForgetBoth() throws {
+    @Test func typedPasswordsStayInTheSecretStoreAndAvailabilityInDefaults() throws {
         let suite = "RemoteScreenTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -12,15 +12,27 @@ struct RemoteScreenTests {
         let store = RemoteScreenSettingsStore(suiteName: suite, secrets: secrets)
         let host = UUID()
 
-        #expect(store.settings(for: host) == nil)
-        try store.save(RemoteScreenSettings(port: 5999, password: "s3cret"), for: host)
-        #expect(store.settings(for: host) == RemoteScreenSettings(port: 5999, password: "s3cret"))
+        #expect(store.password(for: host) == nil)
+        #expect(store.hadScreen(host) == nil)
+        try store.savePassword("s3cret", for: host)
+        store.setHadScreen(true, for: host)
+        #expect(store.password(for: host) == "s3cret")
+        #expect(store.hadScreen(host) == true)
         #expect(try secrets.read(account: host.uuidString) == Data("s3cret".utf8))
         #expect(defaults.dictionaryRepresentation().values.contains { $0 as? String == "s3cret" } == false)
 
-        try store.save(nil, for: host)
-        #expect(store.settings(for: host) == nil)
-        #expect(try secrets.read(account: host.uuidString) == nil)
+        try store.savePassword(nil, for: host)
+        #expect(store.password(for: host) == nil)
+    }
+
+    @Test func probeReadsThePortAndDecodesAVNCPasswordFile() throws {
+        // `vncpasswd` stores "password" as dbd83cfd727a1458.
+        let file = Data([0xDB, 0xD8, 0x3C, 0xFD, 0x72, 0x7A, 0x14, 0x58]).base64EncodedString()
+        #expect(RemoteScreenProbe(output: "port=5999\nvncpasswd=\(file)\n")
+            == RemoteScreenProbe(port: 5999, password: "password"))
+        #expect(RemoteScreenProbe(output: "port=5900\n") == RemoteScreenProbe(port: 5900, password: nil))
+        #expect(RemoteScreenProbe(output: "") == nil)
+        #expect(RemoteScreenProbe(output: "port=nope\n") == nil)
     }
 
     @Test func pumpCarriesBytesBothWaysAndReportsTheFarSideClosing() async throws {

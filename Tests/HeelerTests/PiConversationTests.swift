@@ -63,6 +63,53 @@ struct PiConversationTests {
         #expect(store.settings == nil)
     }
 
+    @Test func piQuestionsKeepTheTranscriptUpAndLeaveOnlyOnceAnswered() throws {
+        let data = Data("""
+        {"type":"snapshot","version":1,"epoch":"bridge","revision":0,"sessionID":"session","rows":[],"busy":true,"blocked":"Pi needs input in Terminal","dialog":{"id":"ask:call-1","kind":"questions","questions":[{"question":"Which layout?","header":"Layout","multiSelect":true,"options":[{"label":"Compact","description":"Less space"}]}]},"future":1}
+        {"type":"dialog","version":1,"epoch":"bridge","revision":1,"sessionID":"session","dialog":null}
+
+        """.utf8)
+        var decoder = PiConversationDecoder()
+        let frames = try decoder.append(data)
+        let store = store()
+        try store.apply(frames[0])
+        let dialog = try #require(store.pendingDialog)
+        #expect(dialog.kind == .questions)
+        #expect(dialog.questions?.first?.options?.first?.description == "Less space")
+        // Pi waits on a question the phone can answer: no terminal behind it.
+        #expect(store.showsTranscript)
+
+        // Answered here: the sheet goes at once, the transcript stays until Pi closes it.
+        store.answer(dialog, .answers([.init(questionIndex: 0, optionIndexes: [0])]))
+        #expect(store.pendingDialog == nil)
+        #expect(store.showsTranscript)
+        try store.apply(frames[1])
+        #expect(store.dialog == nil)
+        // Still blocked with nothing to answer natively (an older extension, or a custom
+        // widget): the terminal shows through, as before.
+        #expect(!store.showsTranscript)
+    }
+
+    @Test func dialogAnswersAreSingleLinesOfTheMirrorsShape() throws {
+        for (answer, expected) in [
+            (PiDialogAnswer.option(2), ["option": 2] as NSDictionary),
+            (.confirmed(false), ["confirmed": false]),
+            (.text("name\nhere"), ["text": "name\nhere"]),
+            (.cancel, ["cancel": true]),
+            (.answers([.init(questionIndex: 0, optionIndexes: [0, 1]), .init(questionIndex: 1, text: "Own")]),
+             ["answers": [["questionIndex": 0, "optionIndexes": [0, 1]], ["questionIndex": 1, "text": "Own"]]]),
+        ] {
+            let line = PiConversationCommand.answerDialog(id: "dialog:1", answer).line
+            #expect(line.last == 0x0A)
+            #expect(line.dropLast().firstIndex(of: 0x0A) == nil)
+            let object = try #require(try JSONSerialization.jsonObject(with: line.dropLast()) as? NSDictionary)
+            let fields = NSMutableDictionary(dictionary: expected)
+            fields["type"] = "answerDialog"
+            fields["id"] = "dialog:1"
+            #expect(object == fields)
+        }
+    }
+
     @Test func thePhoneSendsOnlySettingsCommandsAsSingleLines() throws {
         for (command, expected) in [
             (PiConversationCommand.setModel(provider: "openai", id: "gpt\nx"),

@@ -1137,6 +1137,18 @@ struct AgentTerminalView: View {
                 if !hasHeader { isHeaderDrawerOpen = false }
             }
         }
+        // Pi's questions, asked natively over the transcript.
+        .sheet(item: Binding(get: { pendingPiDialog }, set: { _ in })) { dialog in
+            if let piConversation {
+                PiDialogSheet(dialog: dialog) { piConversation.answer(dialog, $0) }
+                    .environment(
+                        \.colorScheme,
+                        terminal.themes.selection(for: colorScheme).chromeColorScheme(for: colorScheme))
+            }
+        }
+        .onChange(of: pendingPiDialog?.id) { _, id in
+            if id != nil { isAgentSheetPresented = false }
+        }
         .sheet(isPresented: $isAgentSheetPresented) {
             if let piConversation {
                 PiAgentSheet(
@@ -1193,6 +1205,11 @@ struct AgentTerminalView: View {
 
     /// Whether the transcript covers the terminal right now, rather than
     /// only being preferred: Pi's dialogs and Direct Input show the terminal.
+    /// Pi's open question, while the transcript stands in for the terminal.
+    private var pendingPiDialog: PiConversationDialog? {
+        isTranscriptVisible ? piConversation?.pendingDialog : nil
+    }
+
     private var isTranscriptVisible: Bool {
         guard let piConversation, showsConversation, !isDirectInput else { return false }
         return piConversation.showsTranscript

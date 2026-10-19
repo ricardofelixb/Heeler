@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { PiMirrorBridge } from "./bridge.mjs";
+import { ASK_USER_BLOCKED_EVENT, ASK_USER_PROMPT_EVENT, PiMirrorBridge } from "./bridge.mjs";
 
 /** Opt-in companion for Heeler. Uses the already-running TUI's session. */
 export default function (pi: ExtensionAPI) {
@@ -8,7 +8,11 @@ export default function (pi: ExtensionAPI) {
     setModel: (model: Parameters<ExtensionAPI["setModel"]>[0]) => pi.setModel(model),
     getThinkingLevel: () => pi.getThinkingLevel(),
     setThinkingLevel: (level: Parameters<ExtensionAPI["setThinkingLevel"]>[0]) => pi.setThinkingLevel(level),
+    emit: (channel: string, data: unknown) => pi.events.emit(channel, data),
   } });
+  // ask_user_question's questions, so the phone can answer them natively.
+  pi.events.on(ASK_USER_PROMPT_EVENT, (data) => bridge.askUser(data));
+  pi.events.on(ASK_USER_BLOCKED_EVENT, (data) => bridge.askUserBlocked(data));
   pi.on("session_start", async (_event, ctx) => {
     try { await bridge.start(ctx); }
     catch (error) { ctx.ui.notify(`Heeler mirror: ${String(error)}`, "error"); }

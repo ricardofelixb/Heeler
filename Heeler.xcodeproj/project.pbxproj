@@ -334,6 +334,7 @@
 		8BC6A5F3341FEE8734ECB0B0 /* HerdrWireTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30FA0CFA49274EB428AD3E0 /* HerdrWireTests.swift */; };
 		8C7337318B1B3271FD4E85A6 /* AgentActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2E7BAE850794FFCE32E0062 /* AgentActivityAttributes.swift */; };
 		8C92D59797AB4EAB9C01F6DD /* SecretStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55D2BCB4E4038F510852F71C /* SecretStore.swift */; };
+		8D392A62FC0B921AEA188E7A /* PiDialogSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F214C7671F5DB3D8C1952DF /* PiDialogSheet.swift */; };
 		8D6A528175FA0AFF0E7C8616 /* TerminalBackspaceButtonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79E03FBDF372AA6DB7BC7F62 /* TerminalBackspaceButtonTests.swift */; };
 		8D9ED28E1DB5A72B471CBD45 /* AppAppearanceSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAEAF21DF91A1BCE4C9F79A3 /* AppAppearanceSettings.swift */; };
 		8DF7095F918DBDA5B76F24F1 /* HeelerSSH in Frameworks */ = {isa = PBXBuildFile; productRef = 13CFA5F5C15E83F411CC03BA /* HeelerSSH */; };
@@ -882,6 +883,7 @@
 		5CB08528C0328AA9AFE358CE /* TerminalFontSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontSettings.swift; sourceTree = "<group>"; };
 		5DA56CDDFD8BF3A6D19B3434 /* friend-mikan.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "friend-mikan.png"; sourceTree = "<group>"; };
 		5E8A1BCBBB2322E297472810 /* ConsoleCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConsoleCommands.swift; sourceTree = "<group>"; };
+		5F214C7671F5DB3D8C1952DF /* PiDialogSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiDialogSheet.swift; sourceTree = "<group>"; };
 		5F865EED191F0D95F26025CD /* ChangesStore+References.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChangesStore+References.swift"; sourceTree = "<group>"; };
 		6056108BDA8023BCEC2D7AA7 /* AgentControlKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControlKeyboard.swift; sourceTree = "<group>"; };
 		60A3266F97C243598703DB0A /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
@@ -1757,6 +1759,7 @@
 				0342165045255294B1514AD3 /* PiAgentSheet.swift */,
 				78B5673CB808005EB6F472B1 /* PiConversationStore.swift */,
 				0815DB5643CA1F4C761D9C38 /* PiConversationView.swift */,
+				5F214C7671F5DB3D8C1952DF /* PiDialogSheet.swift */,
 				B2437B1D6B97638031514C0F /* PinnedAgentsStore.swift */,
 				C7BD377C8BB7AA8205DD8AFC /* RecentWorkspaceStore.swift */,
 				F0D5F47AF6EF0F3C7F789894 /* RemoteDirectoryBrowser.swift */,
@@ -2538,6 +2541,7 @@
 				085D1F15F67ECCB8766A57EE /* PiConversationSSHSession.swift in Sources */,
 				DE6FBE629FE744C7B6DCC4D8 /* PiConversationStore.swift in Sources */,
 				ADA2A75253A587EB615E55F2 /* PiConversationView.swift in Sources */,
+				8D392A62FC0B921AEA188E7A /* PiDialogSheet.swift in Sources */,
 				DDD5A27BA1126296E5AF7EAA /* PinnedAgentsStore.swift in Sources */,
 				2292C89F605CE42073D49B11 /* Preflight.swift in Sources */,
 				F1896998EA513073CF4EE713 /* PushRegistrationStore.swift in Sources */,

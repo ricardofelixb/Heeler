@@ -32,7 +32,19 @@ const BUILTIN_COMMANDS = [
 ].map(([name, description]) => ({ name, description }));
 const MAX_COMMANDS = 300;
 const MAX_MODELS = 200;
-const MAX_COMMAND_BYTES = 4_096;
+const MAX_COMMAND_BYTES = 16_384;
+const MAX_DIALOG_OPTIONS = 50;
+const MAX_OPTION_TEXT = 500;
+
+// rpiv-ask-user-question's public event channels (2.13.9+ answers from outside).
+export const ASK_USER_PROMPT_EVENT = "rpiv:ask-user:prompt";
+export const ASK_USER_BLOCKED_EVENT = "rpiv:ask-user:blocked";
+export const ASK_USER_ANSWER_EVENT = "rpiv:ask-user:answer";
+// Pi shares one dialog object among extensions; this marks our wrapper on it.
+const DIALOGS = Symbol.for("heeler.mirror.dialogs");
+const short = (text) => String(text ?? "").slice(0, MAX_OPTION_TEXT);
+const withSignal = (opts, signal) =>
+  ({ ...opts, signal: opts?.signal ? AbortSignal.any([opts.signal, signal]) : signal });
 
 // Mirrors pi-ai's getSupportedThinkingLevels, which extensions can't import.
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -116,10 +128,13 @@ export class PiMirrorBridge {
     this.queuedCount = 0;
     this.live = undefined;
     this.blocked = undefined;
+    this.dialogs = [];
+    this.dialogCount = 0;
   }
 
   async start(ctx) {
     this.ctx = ctx;
+    this.wrapDialogs(ctx);
     if (this.server) { this.refresh(ctx); return; }
     const env = this.options.env ?? process.env;
     if (!env.HERDR_SOCKET_PATH || !env.HERDR_PANE_ID) return;
@@ -186,7 +201,7 @@ export class PiMirrorBridge {
     rows = rows.slice(-MAX_ROWS);
     const frame = { type: "snapshot", version: 1, epoch: this.epoch, revision: this.revision,
       sessionID: this.conversationID(), rows, truncated,
-      busy: !this.ctx.isIdle(), blocked: this.blocked ?? null, settings: this.settings() };
+      busy: !this.ctx.isIdle(), blocked: this.blocked ?? null, dialog: this.dialog(), settings: this.settings() };
     // Budget actual escaped bytes in one pass, retaining the most recent contiguous rows.
     let bytes = Buffer.byteLength(JSON.stringify({ ...frame, rows: [] }));
     let count = 0;
@@ -226,9 +241,103 @@ export class PiMirrorBridge {
     };
   }
 
-  /** Only model and thinking changes come from the phone; messages go through Pi's terminal. */
+  /** The question the phone answers: the newest one still open. */
+  dialog() {
+    return this.dialogs.at(-1)?.dialog ?? null;
+  }
+
+  /**
+   * Pi's pick, yes/no and one-line text dialogs, wrapped once on the dialog object every
+   * extension shares, so each one also reaches the phone. The wrapper always
+   * asks the current bridge: a reload replaces the bridge, not the wrapper.
+   */
+  wrapDialogs(ctx) {
+    if (!ctx.hasUI || (ctx.mode && ctx.mode !== "tui")) return;
+    const ui = ctx.ui;
+    if (typeof ui?.select !== "function") return;
+    if (ui[DIALOGS]) { ui[DIALOGS].bridge = this; return; }
+    const state = { bridge: this };
+    Object.defineProperty(ui, DIALOGS, { value: state });
+    // Pi's editor can't be closed from outside, so it stays in Terminal.
+    const { select, confirm, input } = ui;
+    const ask = (dialog, run, parse, cancel) => state.bridge ? state.bridge.ask(dialog, run, parse, cancel) : run();
+    ui.select = (title, options, opts) => ask(
+      { kind: "select", title: clip(title), options: (options ?? []).slice(0, MAX_DIALOG_OPTIONS).map(short) },
+      (signal) => select.call(ui, title, options, signal ? withSignal(opts, signal) : opts),
+      (reply) => Number.isInteger(reply?.option) && reply.option >= 0 && reply.option < Math.min(options.length, MAX_DIALOG_OPTIONS)
+        ? { value: options[reply.option] } : undefined,
+      undefined);
+    ui.confirm = (title, message, opts) => ask(
+      { kind: "confirm", title: clip(title), message: clip(message) },
+      (signal) => confirm.call(ui, title, message, signal ? withSignal(opts, signal) : opts),
+      (reply) => typeof reply?.confirmed === "boolean" ? { value: reply.confirmed } : undefined,
+      false);
+    ui.input = (title, placeholder, opts) => ask(
+      { kind: "input", title: clip(title), placeholder: short(placeholder) },
+      (signal) => input.call(ui, title, placeholder, signal ? withSignal(opts, signal) : opts),
+      (reply) => typeof reply?.text === "string" ? { value: reply.text } : undefined, undefined);
+  }
+
+  /** Shows a dialog on the phone too; whichever side answers first wins and closes the other. */
+  ask(dialog, run, parse, cancel) {
+    if (!this.server) return run();
+    const controller = new AbortController();
+    const id = `dialog:${++this.dialogCount}`;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = () => { settled = true; this.closeDialog(id); };
+      this.openDialog({ id, ...dialog }, (reply) => {
+        const outcome = reply?.cancel === true ? { value: cancel } : parse(reply);
+        if (settled || !outcome) return;
+        finish();
+        resolve(outcome.value);
+        controller.abort();
+      });
+      run(controller.signal).then(
+        (value) => { if (!settled) { finish(); resolve(value); } },
+        (error) => { if (!settled) { finish(); reject(error); } });
+    });
+  }
+
+  /** ask_user_question's questionnaire, answered through its own answer channel. */
+  askUser(payload) {
+    const toolCallId = payload?.toolCallId;
+    if (typeof toolCallId !== "string" || !Array.isArray(payload.questions) || !this.server) return;
+    const questions = payload.questions.slice(0, 4).map((question) => ({
+      question: clip(question?.question), header: short(question?.header),
+      multiSelect: question?.multiSelect === true,
+      options: (question?.options ?? []).slice(0, MAX_DIALOG_OPTIONS)
+        .map((option) => ({ label: short(option?.label), description: short(option?.description) })),
+    }));
+    const emit = this.options.api?.emit;
+    this.openDialog({ id: `ask:${toolCallId}`, kind: "questions", questions }, (reply) => {
+      if (reply?.cancel === true) emit?.(ASK_USER_ANSWER_EVENT, { toolCallId, cancel: true });
+      else if (Array.isArray(reply?.answers)) emit?.(ASK_USER_ANSWER_EVENT, { toolCallId, answers: reply.answers });
+    });
+  }
+
+  askUserBlocked(payload) {
+    if (payload?.active === false && typeof payload.toolCallId === "string") this.closeDialog(`ask:${payload.toolCallId}`);
+  }
+
+  openDialog(dialog, answer) {
+    this.dialogs.push({ dialog, answer });
+    this.broadcast({ type: "dialog", dialog });
+  }
+
+  closeDialog(id) {
+    const count = this.dialogs.length;
+    this.dialogs = this.dialogs.filter((entry) => entry.dialog.id !== id);
+    if (this.dialogs.length !== count) this.broadcast({ type: "dialog", dialog: this.dialog() });
+  }
+
+  /** Model and thinking changes and dialog answers come from the phone; messages go through Pi's terminal. */
   async command(command) {
     if (!this.ctx) return;
+    if (command?.type === "answerDialog") {
+      this.dialogs.find((entry) => entry.dialog.id === command.id)?.answer(command);
+      return;
+    }
     const api = this.options.api ?? {};
     try {
       if (command?.type === "setModel") {
@@ -263,6 +372,7 @@ export class PiMirrorBridge {
   /** Another session starts clean: its tools, prompt and queue are not this one's. */
   adopt(ctx) {
     this.ctx = ctx;
+    this.wrapDialogs(ctx);
     const sessionID = ctx.sessionManager.getSessionId();
     if (this.sessionID !== sessionID) {
       this.toolRows.clear();

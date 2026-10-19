@@ -26,7 +26,9 @@ async function fixture(t) {
     setModel: async (model) => { ctx.model = model; return true; },
     getThinkingLevel: () => thinking,
     setThinkingLevel: (level) => { thinking = level; },
+    emit: (channel, data) => { emitted.push([channel, data]); },
   };
+  const emitted = [];
   const bridge = new PiMirrorBridge({ env, home, heartbeatMs: 20, api });
   await bridge.start(ctx);
   const address = endpoint(home, env.HERDR_SOCKET_PATH, env.HERDR_PANE_ID);
@@ -52,7 +54,7 @@ async function fixture(t) {
     t.after(() => socket.destroy());
     return { socket, next };
   }
-  return { bridge, ctx, client, address, aborted: () => aborted,
+  return { bridge, ctx, client, address, emitted, aborted: () => aborted,
     setBranch: (value) => { branch = value; }, setSession: (value) => { sessionID = value; },
     setIdle: (value) => { idle = value; } };
 }
@@ -119,7 +121,7 @@ test("malformed or oversized phone input closes only that client and never abort
   a.socket.write("not json\n"); await closed;
   const b = await f.client(); await b.next();
   const oversized = once(b.socket, "close");
-  b.socket.write("x".repeat(5_000)); await oversized;
+  b.socket.write("x".repeat(17_000)); await oversized;
   const c = await f.client(); assert.equal((await c.next()).type, "snapshot");
   c.socket.destroy(); await f.bridge.stop(); assert.equal(f.aborted(), 0);
 });
@@ -202,4 +204,93 @@ test("messages sent while Pi works show as queued until Pi takes them", options,
   f.ctx.hasPendingMessages = () => false;
   f.bridge.event({ type: "agent_settled" }, f.ctx);
   assert.equal((await a.next()).rows.some((row) => row.state === "queued"), false);
+});
+
+/** Pi's dialog object as the TUI provides it: each dialog waits for a terminal answer or its signal. */
+function terminalDialogs() {
+  const open = [];
+  const show = (kind, title, opts, cancel) => new Promise((resolve) => {
+    const entry = { kind, title, answer: resolve, signal: opts?.signal };
+    open.push(entry);
+    opts?.signal?.addEventListener("abort", () => { entry.dismissed = true; resolve(cancel); });
+  });
+  return { open, ui: {
+    select: (title, _options, opts) => show("select", title, opts, undefined),
+    confirm: (title, _message, opts) => show("confirm", title, opts, false),
+    input: (title, _placeholder, opts) => show("input", title, opts, undefined),
+    notify: () => {},
+  } };
+}
+
+test("Pi's dialogs reach the phone, and whichever side answers first wins", options, async (t) => {
+  const { bridge, ctx, client } = await fixture(t);
+  const terminal = terminalDialogs();
+  Object.assign(ctx, { hasUI: true, mode: "tui", ui: terminal.ui });
+  bridge.adopt(ctx);
+  const phone = await client();
+  assert.equal((await phone.next()).dialog, null);
+  const send = (command) => phone.socket.write(`${JSON.stringify({ type: "answerDialog", ...command })}\n`);
+
+  // Answered on the phone: Pi gets the phone's pick and the terminal dialog closes.
+  const pick = ctx.ui.select("Which computer are you at?", ["Mac mini", "Omarchy"]);
+  const shown = (await phone.next()).dialog;
+  assert.deepEqual(shown, { id: shown.id, kind: "select", title: "Which computer are you at?", options: ["Mac mini", "Omarchy"] });
+  send({ id: shown.id, option: 7 });
+  send({ id: shown.id, option: 1 });
+  assert.equal(await pick, "Omarchy");
+  assert.equal(terminal.open[0].dismissed, true);
+  assert.equal((await phone.next()).dialog, null);
+
+  // Answered in the terminal: the phone's sheet closes and a late phone answer changes nothing.
+  const confirmed = ctx.ui.confirm("Redeem?", "Use one banked reset");
+  const question = (await phone.next()).dialog;
+  assert.equal(question.message, "Use one banked reset");
+  terminal.open[1].answer(true);
+  assert.equal(await confirmed, true);
+  assert.equal((await phone.next()).dialog, null);
+  send({ id: question.id, confirmed: false });
+
+  // Cancelling from the phone gives Pi the dialog's own cancel value.
+  const typed = ctx.ui.input("Name", "session");
+  send({ id: (await phone.next()).dialog.id, cancel: true });
+  assert.equal(await typed, undefined);
+  assert.equal(terminal.open[2].dismissed, true);
+});
+
+test("a reload re-points the shared dialog wrapper instead of wrapping twice", options, async (t) => {
+  const first = await fixture(t);
+  const second = await fixture(t);
+  const terminal = terminalDialogs();
+  const original = terminal.ui.select;
+  for (const { bridge, ctx } of [first, second]) {
+    Object.assign(ctx, { hasUI: true, mode: "tui", ui: terminal.ui });
+    bridge.adopt(ctx);
+  }
+  assert.notEqual(terminal.ui.select, original);
+  const phone = await second.client();
+  await phone.next();
+  const pick = terminal.ui.select("Pick", ["a"]);
+  const shown = (await phone.next()).dialog;
+  phone.socket.write(`${JSON.stringify({ type: "answerDialog", id: shown.id, option: 0 })}\n`);
+  assert.equal(await pick, "a");
+  assert.equal(terminal.open.length, 1);
+  assert.equal(first.bridge.dialog(), null);
+});
+
+test("ask_user_question is answered through its own answer channel", options, async (t) => {
+  const { bridge, client, emitted } = await fixture(t);
+  const phone = await client();
+  await phone.next();
+  bridge.askUser({ questions: [{ question: "Old", header: "x", multiSelect: false, options: [] }] });
+  bridge.askUser({ toolCallId: "call-1", questions: [{ question: "Which layout?", header: "Layout", multiSelect: false,
+    options: [{ label: "Compact", description: "Less space", hasPreview: true }] }] });
+  const shown = (await phone.next()).dialog;
+  assert.deepEqual(shown, { id: "ask:call-1", kind: "questions", questions: [{ question: "Which layout?", header: "Layout",
+    multiSelect: false, options: [{ label: "Compact", description: "Less space" }] }] });
+  phone.socket.write(`${JSON.stringify({ type: "answerDialog", id: shown.id,
+    answers: [{ questionIndex: 0, optionIndexes: [0] }] })}\n`);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual(emitted, [["rpiv:ask-user:answer", { toolCallId: "call-1", answers: [{ questionIndex: 0, optionIndexes: [0] }] }]]);
+  bridge.askUserBlocked({ active: false, toolCallId: "call-1" });
+  assert.equal((await phone.next()).dialog, null);
 });

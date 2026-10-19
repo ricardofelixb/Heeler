@@ -14,6 +14,10 @@ Entries reference the pull request that made the change.
   same-pane Terminal fallback. Requires the opt-in `pi-extension` on macOS/Linux;
   other agents keep their terminal interface. (#1)
 
+- Personal fork preview: Pi's questions open as native sheets over the
+  conversation (pick one, yes or no, a line of text, and ask_user_question's
+  questionnaire); answering on either side closes the other. (#1)
+
 - Personal fork preview: the Pi conversation's friend capsule opens a sheet to
   switch the model and thinking level and see context, token, and cost usage;
   typing `/` suggests Pi's own and extension commands; scrolling or tapping the

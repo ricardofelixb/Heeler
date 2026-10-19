@@ -22,6 +22,8 @@ actor DemoPiConversation {
         commands: [.init(name: "compact", description: "Manually compact the session context"),
                    .init(name: "new", description: "Start a new session"),
                    .init(name: "live", description: "Talk to Pi")])
+    /// `--demo-pi-dialog <kind>` opens a question Pi waits on: select, confirm, input or questions.
+    private var dialog: PiConversationDialog?
     private var clients: [UUID: AsyncThrowingStream<PiConversationFrame, any Error>.Continuation] = [:]
     private var rows: [PiConversationRow] = [
         .init(id: "demo-notice", role: "notice", text: "Demo conversation · no real agent is running"),
@@ -44,6 +46,12 @@ actor DemoPiConversation {
                 }
             }
         }
+        let arguments = ProcessInfo.processInfo.arguments
+        if let flag = arguments.firstIndex(of: "--demo-pi-dialog"), arguments.indices.contains(flag + 1),
+           let kind = PiConversationDialog.Kind(rawValue: arguments[flag + 1])
+        {
+            dialog = Self.dialog(kind)
+        }
         if ProcessInfo.processInfo.arguments.contains("--demo-pi-queued") {
             rows.append(.init(id: "demo-queued", role: "user",
                               text: "Also keep the pin icon.", state: "queued"))
@@ -53,7 +61,30 @@ actor DemoPiConversation {
     private func snapshot() -> PiConversationFrame {
         PiConversationFrame(type: "snapshot", version: 1, epoch: epoch, revision: revision,
                             sessionID: sessionID, rows: rows, truncated: false, busy: false,
-                            settings: settings)
+                            blocked: dialog?.title ?? dialog.map { _ in "Pi needs input in Terminal" },
+                            dialog: dialog, settings: settings)
+    }
+
+    private static func dialog(_ kind: PiConversationDialog.Kind) -> PiConversationDialog {
+        switch kind {
+        case .select:
+            .init(id: "demo-dialog", kind: kind, title: "Which computer are you at?",
+                  options: ["Mac mini", "Omarchy", "Orgo"])
+        case .confirm:
+            .init(id: "demo-dialog", kind: kind, title: "Redeem a banked reset?",
+                  message: "Uses one of your 2 banked Codex resets.")
+        case .input:
+            .init(id: "demo-dialog", kind: kind, title: "Name this session", placeholder: "attach-polish")
+        case .questions:
+            .init(id: "demo-dialog", kind: kind, questions: [
+                .init(question: "Which layout should the Agents list use?", header: "Layout", multiSelect: false,
+                      options: [.init(label: "Chat list (Recommended)", description: "One row per agent, newest first."),
+                                .init(label: "Grouped by host", description: "A section for each machine.")]),
+                .init(question: "What should each row show?", header: "Rows", multiSelect: true,
+                      options: [.init(label: "Last message", description: "What the agent said last."),
+                                .init(label: "Time", description: "When it last changed.")]),
+            ])
+        }
     }
 
     func open() -> PiConversationSession {
@@ -75,6 +106,13 @@ actor DemoPiConversation {
             }
         case let .setThinking(level):
             settings.thinking = level
+        case .answerDialog:
+            dialog = nil
+            revision += 1
+            let frame = PiConversationFrame(type: "dialog", version: 1, epoch: epoch, revision: revision,
+                                            sessionID: sessionID)
+            for client in clients.values { client.yield(frame) }
+            return
         }
         revision += 1
         let frame = PiConversationFrame(type: "settings", version: 1, epoch: epoch, revision: revision,

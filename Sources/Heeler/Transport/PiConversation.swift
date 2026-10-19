@@ -38,19 +38,78 @@ struct PiConversationSettings: Codable, Sendable, Equatable {
     var commands: [Command] = []
 }
 
+/// A question Pi is waiting on that the phone can answer: a pick, a yes or
+/// no, one line of text, or ask_user_question's questionnaire.
+struct PiConversationDialog: Codable, Sendable, Equatable, Identifiable {
+    enum Kind: String, Codable, Sendable {
+        case select, confirm, input, questions
+    }
+    struct Question: Codable, Sendable, Equatable {
+        struct Option: Codable, Sendable, Equatable {
+            let label: String
+            var description: String? = nil
+        }
+        let question: String
+        var header: String? = nil
+        var multiSelect: Bool? = nil
+        var options: [Option]? = nil
+    }
+    let id: String
+    let kind: Kind
+    var title: String? = nil
+    var message: String? = nil
+    var options: [String]? = nil
+    var placeholder: String? = nil
+    var questions: [Question]? = nil
+}
+
+/// One answered question of a questionnaire: picked options or typed text.
+struct PiQuestionAnswer: Sendable, Equatable {
+    let questionIndex: Int
+    var optionIndexes: [Int]? = nil
+    var text: String? = nil
+}
+
+enum PiDialogAnswer: Sendable, Equatable {
+    case option(Int)
+    case confirmed(Bool)
+    case text(String)
+    case answers([PiQuestionAnswer])
+    case cancel
+}
+
 /// The only requests the phone sends: messages go through Pi's terminal.
 enum PiConversationCommand: Sendable, Equatable {
     case setModel(provider: String, id: String)
     case setThinking(String)
+    case answerDialog(id: String, PiDialogAnswer)
 
     var line: Data {
-        let object: [String: String] = switch self {
+        let object: [String: Any] = switch self {
         case let .setModel(provider, id): ["type": "setModel", "provider": provider, "id": id]
         case let .setThinking(level): ["type": "setThinking", "level": level]
+        case let .answerDialog(id, answer): Self.answer(answer).merging(
+            ["type": "answerDialog", "id": id]) { _, new in new }
         }
         var data = (try? JSONSerialization.data(withJSONObject: object, options: .sortedKeys)) ?? Data()
         data.append(0x0A)
         return data
+    }
+
+    private static func answer(_ answer: PiDialogAnswer) -> [String: Any] {
+        switch answer {
+        case let .option(index): return ["option": index]
+        case let .confirmed(value): return ["confirmed": value]
+        case let .text(text): return ["text": text]
+        case .cancel: return ["cancel": true]
+        case let .answers(answers):
+            return ["answers": answers.map { answer -> [String: Any] in
+                var entry: [String: Any] = ["questionIndex": answer.questionIndex]
+                if let indexes = answer.optionIndexes { entry["optionIndexes"] = indexes }
+                if let text = answer.text { entry["text"] = text }
+                return entry
+            }]
+        }
     }
 }
 
@@ -65,6 +124,7 @@ struct PiConversationFrame: Codable, Sendable {
     var truncated: Bool? = nil
     var busy: Bool? = nil
     var blocked: String? = nil
+    var dialog: PiConversationDialog? = nil
     var settings: PiConversationSettings? = nil
 }
 

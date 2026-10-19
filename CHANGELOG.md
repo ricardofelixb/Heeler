@@ -36,6 +36,11 @@ Entries reference the pull request that made the change.
 - Personal fork preview: scrolling back through a Pi conversation shows a down
   arrow that returns to the latest message, and iPhone stays in portrait. (#1)
 
+- Personal fork preview: a Host's screen in the Agent sheet. Set up its VNC port
+  and password once; a live preview opens full-screen control with trackpad
+  touch and a keyboard, tunnelled over SSH so the VNC server can stay on the
+  Host's loopback. (#1)
+
 - Personal fork preview: a quieter By Workspace agent list with stable friend
   avatars, task-first titles, and compact status labels. New installations start
   By Workspace; saved presentation choices are preserved. (#1)

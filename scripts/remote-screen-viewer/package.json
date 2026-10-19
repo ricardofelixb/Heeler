@@ -1,0 +1,12 @@
+{
+  "name": "heeler-remote-screen-viewer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@novnc/novnc": "1.7.0",
+    "esbuild": "0.27.0"
+  }
+}

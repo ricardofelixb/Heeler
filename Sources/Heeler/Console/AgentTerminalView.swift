@@ -1143,7 +1143,8 @@ struct AgentTerminalView: View {
                     store: piConversation,
                     avatar: WorkspaceAgentPresentation.avatar(for: agent.id),
                     name: WorkspaceAgentPresentation.title(for: agent.agent),
-                    actions: backHeaderActions)
+                    actions: backHeaderActions,
+                    host: console.host(for: agent.hostID))
             }
         }
         .onWindowControlsHeightChange { windowControlsHeight = $0 }

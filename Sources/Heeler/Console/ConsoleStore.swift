@@ -121,6 +121,11 @@ final class ConsoleStore {
         rebuild()
     }
 
+    /// The catalog Host behind `id`, as last aligned by `setHosts`.
+    func host(for id: Host.ID) -> Host? {
+        projections[id]?.host
+    }
+
     /// Aligns Host projections with the catalog. Editing a Host replaces its
     /// projection because its connection coordinates may have changed.
     func setHosts(_ hosts: [Host]) {

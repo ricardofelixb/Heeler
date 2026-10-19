@@ -171,6 +171,17 @@ public final class SSHConnection: Sendable {
         }
     }
 
+    /// Opens a TCP stream to `endpoint` as this authenticated Host sees it
+    /// (direct-tcpip), such as a service bound to the Host's loopback. The
+    /// stream takes the connection over: nothing else runs on it afterwards.
+    public func openForwardedStream(
+        to endpoint: SSHEndpoint,
+        timeout: Duration
+    ) async throws -> SSHForwardedStream {
+        SSHForwardedStream(
+            transport: try await driver.openDirectTCPIP(endpoint: endpoint, timeout: timeout))
+    }
+
     /// Opens an SSH connection to `endpoint` through this authenticated Jump
     /// Host. The returned connection owns both hops and closes them in target,
     /// forwarding-channel, Jump Host order.

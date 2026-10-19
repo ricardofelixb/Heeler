@@ -1948,6 +1948,24 @@ actor HeelerSSHTransport: Transport {
         }
     }
 
+    /// Hands this connection over to one stream to `port` on the Host's own
+    /// loopback, such as its VNC server. The transport carries nothing else
+    /// afterwards, so open it on a dedicated connection.
+    func openLoopbackStream(port: UInt16) async throws -> HostLoopbackStream {
+        do {
+            let stream = try await connection.openForwardedStream(
+                to: SSHEndpoint(host: "127.0.0.1", port: port), timeout: requestTimeout)
+            let descriptor = try stream.takeDescriptor()
+            return HostLoopbackStream(descriptor: descriptor) { [self] in
+                try? await stream.close(timeout: .seconds(2))
+                try? await close()
+            }
+        } catch {
+            try? await close()
+            throw Self.mapConnect(error)
+        }
+    }
+
     func close() async throws {
         guard connected else { return }
         connected = false

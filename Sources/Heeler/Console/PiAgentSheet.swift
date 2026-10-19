@@ -55,6 +55,12 @@ struct PiAgentSheet: View {
                             screen.stop()
                             self.screen = nil
                             isScreenPresented = true
+                            RemoteScreenPresenter.present(title: host.name) {
+                                RemoteScreenSession(host: host, store: screenSettings, viewOnly: false)
+                            } onClose: {
+                                isScreenPresented = false
+                                startPreview()
+                            }
                         }
                         .listRowInsets(EdgeInsets())
                     }
@@ -77,13 +83,6 @@ struct PiAgentSheet: View {
         .onDisappear {
             screen?.stop()
             screen = nil
-        }
-        .fullScreenCover(isPresented: $isScreenPresented, onDismiss: startPreview) {
-            if let host {
-                RemoteScreenFullView(title: host.name) {
-                    RemoteScreenSession(host: host, store: screenSettings, viewOnly: false)
-                }
-            }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)

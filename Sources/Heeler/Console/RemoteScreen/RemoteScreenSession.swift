@@ -34,6 +34,8 @@ final class RemoteScreenSession {
     let username: String
     @ObservationIgnored let webView: WKWebView
     @ObservationIgnored private let hostID: Host.ID
+    /// This Host's screen as last seen, shown while the live one connects.
+    @ObservationIgnored let cachedSnapshot: UIImage?
     @ObservationIgnored private let store: RemoteScreenSettingsStore
     @ObservationIgnored private let viewOnly: Bool
     @ObservationIgnored private let open: Opener
@@ -53,6 +55,7 @@ final class RemoteScreenSession {
         open: @escaping Opener
     ) {
         self.hostID = hostID
+        cachedSnapshot = RemoteScreenSnapshots.images[hostID]
         self.username = username
         self.store = store
         self.viewOnly = viewOnly
@@ -110,6 +113,13 @@ final class RemoteScreenSession {
     }
 
     func stop() {
+        if phase == .live {
+            // Keep the last picture, so the screen opens on it next time.
+            let hostID = hostID
+            webView.takeSnapshot(with: nil) { image, _ in
+                if let image { RemoteScreenSnapshots.images[hostID] = image }
+            }
+        }
         generation += 1
         opening?.cancel()
         opening = nil
@@ -299,4 +309,10 @@ private final class RemoteScreenMessages: NSObject, WKScriptMessageHandler {
         guard let body = message.body as? [String: Any] else { return }
         MainActor.assumeIsolated { session?.handle(body) }
     }
+}
+
+/// Each Host's screen as last seen, for this launch only.
+@MainActor
+enum RemoteScreenSnapshots {
+    static var images: [Host.ID: UIImage] = [:]
 }

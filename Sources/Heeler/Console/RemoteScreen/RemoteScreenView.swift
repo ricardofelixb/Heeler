@@ -22,6 +22,11 @@ struct RemoteScreenPreview: View {
             ZStack {
                 if session.phase == .live {
                     Color.black
+                } else if let snapshot = session.cachedSnapshot {
+                    // The last picture of this screen, until the live one lands.
+                    Image(uiImage: snapshot)
+                        .resizable()
+                        .scaledToFill()
                 } else {
                     // A skeleton until the first picture: every Host has a screen.
                     Color.secondary.opacity(0.18)
@@ -54,13 +59,20 @@ struct RemoteScreenPreview: View {
 struct RemoteScreenFullView: View {
     let title: String
     let makeSession: () -> RemoteScreenSession
-    @Environment(\.dismiss) private var dismiss
+    let onClose: () -> Void
     @State private var session: RemoteScreenSession?
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let session {
+                // The last picture of this screen while the live one connects.
+                if session.phase != .live, let snapshot = session.cachedSnapshot {
+                    Image(uiImage: snapshot)
+                        .resizable()
+                        .scaledToFit()
+                        .opacity(0.5)
+                }
                 RemoteScreenWebView(session: session)
                 RemoteScreenStatus(session: session, compact: false)
             }
@@ -69,7 +81,8 @@ struct RemoteScreenFullView: View {
             HStack {
                 Button("Close", systemImage: "xmark") {
                     session?.stop()
-                    dismiss()
+                    session = nil
+                    onClose()
                 }
                 Spacer()
                 Text(verbatim: title)
@@ -87,12 +100,8 @@ struct RemoteScreenFullView: View {
         }
         .preferredColorScheme(.dark)
         .statusBarHidden()
-        .onAppear {
-            session = makeSession()
-            RemoteScreenOrientation.allowsLandscape = true
-        }
+        .onAppear { session = makeSession() }
         .onDisappear {
-            RemoteScreenOrientation.allowsLandscape = false
             session?.stop()
             session = nil
         }

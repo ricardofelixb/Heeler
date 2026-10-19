@@ -781,7 +781,8 @@ struct ConsoleView: View {
                 .modifier(ConsoleListSearch(
                     text: $agentSearchText, isPresented: $isAgentSearchPresented,
                     focus: $focusedSearch, tab: .agents,
-                    prompt: "Search Agents", showsField: !usesSidebarNavigation))
+                    // The Agents list stays clean: no search on iPhone.
+                    prompt: "Search Agents", showsField: false))
         case .terminals:
             if hosts.hosts.isEmpty {
                 noHostsView
@@ -1369,6 +1370,11 @@ struct ConsoleView: View {
             }
         case .noSearchResults:
             ContentUnavailableView.search(text: agentSearchText)
+        case .rows where filteredAgents.isEmpty && hostsAreOnlyConnecting:
+            // Cold boot: one spinner in the middle, until the first Agents land.
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("Connecting to Hosts")
         case .rows:
             List(selection: selectedItem) { flatAgentListRows }
             .listStyle(.plain)
@@ -1393,18 +1399,8 @@ struct ConsoleView: View {
 
     @ViewBuilder
     private var agentHostIssueRows: some View {
-        if !visibleHostIssues.isEmpty,
-           visibleHostIssues.allSatisfy({ $0.tone == .pending || $0.tone == .reconnecting })
-        {
-            // Hosts on their way say nothing more than a spinner would;
-            // only a Host that needs you gets words.
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .accessibilityLabel("Connecting to Hosts")
-        } else if !visibleHostIssues.isEmpty {
+        // Hosts on their way need no words; only a Host that needs you does.
+        if !visibleHostIssues.isEmpty, !hostsAreOnlyConnecting {
             // On the Agent rows' edges; the list's own separator sets it
             // apart from the first Agent.
             ConsoleHostIssueList(
@@ -1615,6 +1611,11 @@ struct ConsoleView: View {
         } else {
             notificationRouter.open(target)
         }
+    }
+
+    /// Every Host problem is only a connection on its way.
+    private var hostsAreOnlyConnecting: Bool {
+        visibleHostIssues.allSatisfy { $0.tone == .pending || $0.tone == .reconnecting }
     }
 
     private var agentsSurface: ConsoleAgentsSurface {

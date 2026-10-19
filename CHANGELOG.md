@@ -19,6 +19,11 @@ Entries reference the pull request that made the change.
   typing `/` suggests Pi's own and extension commands; scrolling or tapping the
   messages puts the keyboard away. (#1)
 
+- Personal fork preview: the Agents tab is one chat-style list under an All
+  Hosts switcher, with agents waiting on you first, a status dot on each
+  friend, an unread dot for finished work, and rename beside pin on swipe.
+  Pi's "π - " title prefix is gone. (#1)
+
 - Personal fork preview: a quieter By Workspace agent list with stable friend
   avatars, task-first titles, and compact status labels. New installations start
   By Workspace; saved presentation choices are preserved. (#1)

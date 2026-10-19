@@ -19,6 +19,7 @@ struct WorkspaceAgentPresentationTests {
         #expect(WorkspaceAgentPresentation.title(for: agent(title: "", name: "Reviewer")) == "Reviewer")
         #expect(WorkspaceAgentPresentation.title(for: agent(title: "")) == "codex")
         #expect(WorkspaceAgentPresentation.title(for: agent(title: "", kind: "")) == "Agent")
+        #expect(WorkspaceAgentPresentation.title(for: agent(stripped: "π - fix-login - heeler")) == "fix-login - heeler")
     }
 
     @MainActor
@@ -35,5 +36,13 @@ struct WorkspaceAgentPresentationTests {
         for asset in assets {
             #expect(UIImage(named: asset, in: Bundle.main, compatibleWith: nil) != nil)
         }
+    }
+
+    @Test func onlyDialogsAndUnseenFinishesNeedAttention() {
+        #expect(WorkspaceAgentPresentation.needsAttention(.blocked))
+        #expect(WorkspaceAgentPresentation.needsAttention(.done))
+        #expect(!WorkspaceAgentPresentation.needsAttention(.working))
+        #expect(!WorkspaceAgentPresentation.needsAttention(.idle))
+        #expect(WorkspaceAgentPresentation.statusText(for: .blocked) == "Needs input")
     }
 }

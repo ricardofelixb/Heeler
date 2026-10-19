@@ -1,50 +1,67 @@
 import SwiftUI
 import UIKit
 
-/// A deliberately quieter row for By Workspace. Other presentations retain
-/// the plugin-configurable fields; the section already identifies this Host.
-struct WorkspaceAgentRow: View {
+/// The Agents list's one row, shaped like a chat: friend, title, and a
+/// single quiet status line. Plugin-configurable fields stay with the
+/// upstream card, which the fork no longer lists.
+struct AgentListRow: View {
     let agent: ConsoleAgent
     let isPinned: Bool
+    /// Under All Hosts the row says which machine it is on.
+    let showsHost: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        let status = agent.agent.status
         HStack(spacing: 12) {
             WorkspaceAgentPresentation.avatar(for: agent.id)
                 .renderingMode(.original)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 42, height: 42)
+                .frame(width: 44, height: 44)
+                .overlay(alignment: .bottomTrailing) {
+                    if status == .working || status == .blocked {
+                        Circle()
+                            .fill(Color(status.inkUIColor))
+                            .frame(width: 11, height: 11)
+                            .overlay(Circle().stroke(Color(uiColor: .systemBackground), lineWidth: 2))
+                    }
+                }
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(WorkspaceAgentPresentation.title(for: agent.agent))
                         .font(.body.weight(.semibold))
                         .foregroundStyle(.primary)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                     if isPinned {
                         Image(systemName: "pin.fill")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.tertiary)
                             .accessibilityLabel("Pinned")
                     }
                 }
-                HStack(spacing: 5) {
-                    Text(agent.agent.status.rawValue.capitalized)
-                        .foregroundStyle(agent.agent.status == .blocked
-                            ? Color(agent.agent.status.inkUIColor) : .secondary)
-                    Text("·")
-                    Text(agent.agent.kind.capitalized)
-                }
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(status == .blocked ? Color(status.inkUIColor) : .secondary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if status == .done {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 10, height: 10)
+                    .accessibilityLabel("Unread")
+            }
         }
         .frame(minHeight: 52)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
+    }
+
+    private var subtitle: String {
+        let state = WorkspaceAgentPresentation.statusText(for: agent.agent.status)
+        return showsHost ? "\(state) · \(agent.hostName)" : state
     }
 }
 
@@ -52,11 +69,28 @@ enum WorkspaceAgentPresentation {
     static func title(for agent: Agent) -> String {
         for value in [agent.paneTitle, agent.terminalTitleStripped, agent.title, agent.displayName] {
             if let value {
-                let title = value.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+                var title = value.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+                // Pi brands its terminal title "π - …"; the friend says that.
+                if title.hasPrefix("π - ") { title.removeFirst(4) }
                 if !title.isEmpty { return title }
             }
         }
         return "Agent"
+    }
+
+    static func statusText(for status: AgentStatus) -> String {
+        switch status {
+        case .working: "Working"
+        case .blocked: "Needs input"
+        case .done: "Done"
+        case .idle: "Idle"
+        default: status.rawValue.capitalized
+        }
+    }
+
+    /// Waiting on a dialog, or finished and not yet seen.
+    static func needsAttention(_ status: AgentStatus) -> Bool {
+        status == .blocked || status == .done
     }
 
     // These are bundled PNG resources, not asset-catalog entries.

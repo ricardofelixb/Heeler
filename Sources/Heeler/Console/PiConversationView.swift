@@ -10,6 +10,8 @@ struct PiConversationView: View {
     /// Where the floating header ends, from the top of the screen's surface,
     /// which the transcript reaches by running under the status bar.
     let headerBottom: CGFloat
+    /// Names what is connecting before the first messages arrive.
+    var hostName = ""
     /// A drag or tap on the messages: the reader wants the screen back.
     var onReading: () -> Void = {}
     @State private var followsLatest = true
@@ -73,7 +75,9 @@ struct PiConversationView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contentMargins(.top, headerBottom + 16, for: .scrollContent)
-        .contentMargins(.bottom, composerHeight + 16, for: .scrollContent)
+        // Clears the fade above the Composer, so the last message rests on
+        // solid background rather than dissolving into the status line.
+        .contentMargins(.bottom, composerHeight + 48, for: .scrollContent)
         .overlay(alignment: .top) {
             PiEdgeFade(edge: .top, color: palette.background)
                 .frame(height: headerBottom + 48)
@@ -110,7 +114,8 @@ struct PiConversationView: View {
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .overlay {
             if store.rows.isEmpty && !store.isConnected {
-                Text("Connecting…").font(.footnote).foregroundStyle(secondary)
+                Text(hostName.isEmpty ? "Connecting…" : "Connecting to \(hostName)…")
+                    .font(.footnote).foregroundStyle(secondary)
             }
         }
         .simultaneousGesture(TapGesture().onEnded { onReading() })

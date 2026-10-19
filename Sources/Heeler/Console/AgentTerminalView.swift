@@ -1029,6 +1029,7 @@ struct AgentTerminalView: View {
                     isActive: scenePhase == .active && isOnStage(),
                     connectionGeneration: console.hostConnectionGenerations[agent.hostID],
                     headerBottom: backHeaderTop + AgentDetailHeader.controlSize,
+                    hostName: agent.hostName,
                     onReading: dismissComposerKeyboard)
             }
         }
@@ -1871,6 +1872,9 @@ struct AgentTerminalView: View {
             }
         } else if let presentation = TerminalStatusPresentation(status: attach.terminalStatus) {
             switch presentation.kind {
+            case .connecting where isTranscriptVisible:
+                // The transcript says it is connecting, in one quiet line.
+                EmptyView()
             case .connecting:
                 // No dim: a reattach would otherwise flash the whole screen dark.
                 TerminalStatusDialog(

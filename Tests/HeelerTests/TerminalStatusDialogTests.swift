@@ -49,15 +49,23 @@ struct TerminalStatusDialogTests {
         let palette = TerminalThemeOption.solarized.palette(for: .dark)
         let image = try await Self.render(
             TerminalStatusDialog(
-                glyph: .progress, title: "Connecting…", palette: palette,
-                dimsBackground: false))
+                glyph: .symbol("cable.connector.slash"), title: "Session Ended",
+                palette: palette, dimsBackground: false))
 
-        // Inside the card, clear of the centred spinner and copy.
+        // Inside the card, clear of the centred glyph and copy.
         let inside = try #require(Self.color(in: image, atUnit: CGPoint(x: 0.15, y: 0.5)))
         let expected = Self.packed(palette.background.mix(with: palette.foreground, by: 0.08))
         #expect(
             Self.channelDistance(inside, expected) <= 8,
             "card drew \(String(inside, radix: 16)), expected ~\(String(expected, radix: 16))")
+    }
+
+    @Test func aLoaderDrawsNoCard() async throws {
+        // Loading waits on nothing from the reader: a spinner and a line, with
+        // the terminal's ground showing all around them.
+        let image = try await Self.render(
+            TerminalStatusDialog(glyph: .progress, title: "Connecting…", dimsBackground: false))
+        #expect(try #require(Self.color(in: image, atUnit: CGPoint(x: 0.15, y: 0.5))) == Self.backdrop)
     }
 
     @Test func thePrimaryButtonIsFilledWithTheThemeForegroundNotItsAccent() async throws {

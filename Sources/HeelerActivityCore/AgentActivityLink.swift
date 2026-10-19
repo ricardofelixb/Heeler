@@ -1,18 +1,19 @@
 import Foundation
 
-/// `heeler://agent` deep links into the app. Heeler's own Live Activity names
-/// the Host by its local id: `heeler://agent/<hostID>/<paneID>` opens that
-/// Agent's detail and `heeler://agent/<hostID>` the Console. Pane ids contain
+/// `heeler-dev://agent` deep links into the fork. Its Live Activity names
+/// the Host by its local id: `heeler-dev://agent/<hostID>/<paneID>` opens that
+/// Agent's detail and `heeler-dev://agent/<hostID>` the Console. Pane ids contain
 /// `:` and are percent-encoded as a path component.
 ///
 /// Another app cannot know that id, so it names the Host the way it reaches
 /// it, and the app looks the Host up among the saved ones:
-/// `heeler://agent?host=<address or name>&session=<name>&pane=<paneID>`.
+/// `heeler-dev://agent?host=<address or name>&session=<name>&pane=<paneID>`.
 /// `session` is the herdr session, left out for the default one; without
 /// `pane` the link opens the Console. Other query items are ignored. The
 /// scheme is registered in the app's Info.plist so other apps can open it.
 enum AgentActivityLink {
-    static let scheme = "heeler"
+    // Only this scheme is registered with iOS; upstream keeps `heeler://`.
+    static let scheme = "heeler-dev"
     static let host = "agent"
 
     /// A tap on one agent row: opens that agent's detail.
@@ -54,7 +55,11 @@ enum AgentActivityLink {
     }
 
     static func target(from url: URL) -> Target? {
-        guard url.scheme == scheme, url.host() == host else { return nil }
+        // Decode upstream-format links for compatibility, without claiming
+        // their OS URL handler when both apps are installed.
+        guard (url.scheme == scheme || url.scheme == "heeler"), url.host() == host else {
+            return nil
+        }
         let parts = url.pathComponents.filter { $0 != "/" }
         return parts.isEmpty ? lookupTarget(from: url) : idTarget(from: parts)
     }

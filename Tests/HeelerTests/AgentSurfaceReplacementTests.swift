@@ -490,10 +490,10 @@ struct AgentSurfaceReplacementTests {
 
         activity.didEnterBackground()
         await oldTransport.failAttachStream(.channelFailed(detail: "app was away"))
+        // A dropped channel reattaches on its own rather than ending.
         try #require(await Self.eventually {
-            if case .ended = oldOwner.terminalStatus { return true }
-            return false
-        }, "the live predecessor should end while the app is away")
+            oldOwner.terminalStatus != .live
+        }, "the live predecessor should lose its session while the app is away")
 
         controller.rootView = AnyView(Color.clear)
         controller.view.setNeedsLayout()

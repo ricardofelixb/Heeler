@@ -1,32 +1,71 @@
 import Foundation
 import Observation
 
-/// Mirrors Pi's authoritative branch. No terminal parsing, optimistic transcript, or agent lifetime ownership.
+/// Mirrors Pi's authoritative branch, read-only. No terminal parsing,
+/// optimistic transcript, input path, or agent lifetime ownership.
 @MainActor @Observable
 final class PiConversationStore {
     typealias Open = @Sendable () async throws -> PiConversationSession
-    var draft = ""
     private(set) var rows: [PiConversationRow] = []
     private(set) var isConnected = false
-    private(set) var isConnecting = false
+    /// The first attempt failed before any snapshot: most likely no extension
+    /// in this Pi, so the terminal shows while retries continue.
+    private(set) var isUnavailable = false
     private(set) var isBusy = false
     private(set) var blocked: String?
-    private(set) var error: String?
     private(set) var isTruncated = false
-    private(set) var pending: PiConversationCommand?
+    private(set) var sessionID: String?
+    private(set) var settings: PiConversationSettings?
+    /// The question Pi is waiting on, while the phone can answer it.
+    private(set) var dialog: PiConversationDialog?
+    /// Answered here and on its way to Pi, which closes it in a moment.
+    private var answeredDialogID: String?
+    /// Your messages that just landed, which the transcript pops in; not
+    /// those already there on connect, nor a queued one Pi has now taken.
+    private(set) var freshUserIDs: Set<String> = []
+    /// Where a row's identity on screen differs from Pi's: a finished reply
+    /// keeps the place of the text that streamed in, rather than replacing it.
+    @ObservationIgnored private var displayIDs: [String: String] = [:]
     @ObservationIgnored private let open: Open
+    @ObservationIgnored private let retryDelay: @Sendable (Int) async throws -> Void
     @ObservationIgnored private var session: PiConversationSession?
-    @ObservationIgnored private var connectionID = UUID()
     @ObservationIgnored private var epoch: String?
-    @ObservationIgnored private var sessionID: String?
     @ObservationIgnored private var revision: UInt64 = 0
     @ObservationIgnored private var observers: [UUID: CheckedContinuation<Void, Never>] = [:]
     @ObservationIgnored private var worker: Task<Void, Never>?
     @ObservationIgnored private var workerID = UUID()
 
-    init(open: @escaping Open) { self.open = open }
+    init(open: @escaping Open,
+         retryDelay: @escaping @Sendable (Int) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) {
+        self.open = open
+        self.retryDelay = retryDelay
+    }
 
-    /// Multiple windows share one stream/draft. The last departing view releases only SSH, never Pi.
+    /// The transcript covers the terminal unless Pi is asking for input there
+    /// or the mirror has never answered. It stays up while connecting and
+    /// through reconnects, showing the last snapshot, so the terminal never
+    /// flashes through on a cold start, a remount, or a dropped stream.
+    var showsTranscript: Bool {
+        !isUnavailable && (blocked == nil || dialog != nil)
+    }
+
+    /// The question to ask natively, until it is answered.
+    var pendingDialog: PiConversationDialog? {
+        dialog?.id == answeredDialogID ? nil : dialog
+    }
+
+    /// Sends an answer and puts the question away. If Pi hasn't taken it
+    /// shortly after, the question comes back rather than leaving Pi waiting.
+    func answer(_ dialog: PiConversationDialog, _ answer: PiDialogAnswer) {
+        answeredDialogID = dialog.id
+        send(.answerDialog(id: dialog.id, answer))
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            if answeredDialogID == dialog.id { answeredDialogID = nil }
+        }
+    }
+
+    /// Multiple windows share one stream. The last departing view releases only SSH, never Pi.
     func observe() async {
         let id = UUID()
         await withTaskCancellationHandler {
@@ -52,112 +91,77 @@ final class PiConversationStore {
         worker = nil
         let previous = session
         session = nil
-        connectionID = UUID()
         isConnected = false
-        isConnecting = false
         Task { await previous?.end() }
     }
 
+    /// Retries every failure. A dropped link and a missing extension look the
+    /// same from here, and the terminal stays usable while this backs off.
     private func connectLoop(run: UUID) async {
-        var hasConnected = false
-        var delay = 2
+        var delay = 1
         while !Task.isCancelled, workerID == run {
-            isConnecting = true
             do {
                 let opened = try await open()
                 guard !Task.isCancelled, workerID == run else { await opened.end(); return }
                 session = opened
-                connectionID = UUID()
                 do {
                     for try await frame in opened.events {
                         guard !Task.isCancelled, workerID == run else { break }
                         try apply(frame)
-                        if frame.type == "snapshot" {
-                            hasConnected = true
-                            delay = 2
-                            // Retries are safe only within this exact live bridge/session.
-                            if let pending { try await opened.send(pending) }
-                        }
+                        if frame.type == "snapshot" { delay = 1 }
                     }
-                    if !Task.isCancelled { throw TransportError.channelFailed(detail: "Pi mirror disconnected.") }
-                } catch {
-                    await opened.end()
-                    throw error
-                }
+                } catch {}
                 await opened.end()
-            } catch {
-                guard !Task.isCancelled, workerID == run else { return }
-                self.error = error.localizedDescription
-            }
-            guard workerID == run else { return }
+            } catch {}
+            guard !Task.isCancelled, workerID == run else { return }
             session = nil
-            connectionID = UUID()
             isConnected = false
-            isConnecting = false
-            // A missing opt-in extension needs user action, not socket polling.
-            guard hasConnected else { return }
-            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            if sessionID == nil { isUnavailable = true }
+            do { try await retryDelay(delay) } catch { return }
             delay = min(delay * 2, 30)
         }
     }
 
-    func retry() {
-        guard !observers.isEmpty else { return }
-        workerID = UUID()
-        worker?.cancel()
-        let previous = session
-        session = nil
-        connectionID = UUID()
-        isConnected = false
-        let run = UUID()
-        workerID = run
-        worker = Task {
-            await previous?.end()
-            guard !Task.isCancelled else { return }
-            await self.connectLoop(run: run)
+    /// The row's identity on screen.
+    func displayID(_ row: PiConversationRow) -> String { displayIDs[row.id] ?? row.id }
+
+    /// Carries screen identities across an update of the same live session.
+    private func adopt(_ incoming: [PiConversationRow], continuing: Bool) {
+        let previous = rows
+        rows = incoming
+        guard continuing else {
+            displayIDs = [:]
+            freshUserIDs = []
+            return
         }
-    }
-
-    var canSend: Bool {
-        isConnected && pending == nil && blocked == nil && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    func sendPrompt() async {
-        guard canSend else { return }
-        await submit(type: "prompt", text: draft)
-    }
-
-    func stop() async {
-        guard isConnected, pending == nil else { return }
-        await submit(type: "stop", text: nil)
-    }
-
-    private func submit(type: String, text: String?) async {
-        guard let session, let sessionID, let epoch else { return }
-        let command = PiConversationCommand(id: UUID().uuidString, sessionID: sessionID,
-                                            epoch: epoch, type: type, text: text)
-        pending = command
-        error = nil
-        let sendingConnection = connectionID
-        do { try await session.send(command) }
-        catch {
-            // A late old-channel failure must not tear down a newer connection or an acknowledged send.
-            guard connectionID == sendingConnection, pending?.id == command.id else { return }
-            // The write might have reached Pi. Keep its ID; don't create a duplicate prompt.
-            self.error = "Delivery not confirmed. Reconnect to check the same request safely."
-            isConnected = false
-            retry()
+        let streaming = PiConversationRow.streamingID
+        let previousIDs = Set(previous.map(\.id))
+        let incomingIDs = Set(incoming.map(\.id))
+        if previousIDs.contains(streaming), !incomingIDs.contains(streaming),
+           let finished = incoming.last(where: { $0.role == "assistant" && !previousIDs.contains($0.id) })
+        {
+            displayIDs[finished.id] = displayIDs[streaming] ?? streaming
         }
+        displayIDs[streaming] = incomingIDs.contains(streaming)
+            ? (previousIDs.contains(streaming) ? displayIDs[streaming] : "live:\(UUID().uuidString)")
+            : nil
+        displayIDs = displayIDs.filter { incomingIDs.contains($0.key) }
+        let queued = Set(previous.filter { $0.role == "user" && $0.state == "queued" }.map(\.text))
+        let fresh = incoming.filter {
+            $0.role == "user" && !previousIDs.contains($0.id) && !queued.contains($0.text)
+        }
+        if !fresh.isEmpty { freshUserIDs = Set(fresh.map(\.id)) }
+    }
+
+    /// Best effort: Pi answers with the settings it actually applied, and a
+    /// dropped link reconnects to a fresh snapshot.
+    func send(_ command: PiConversationCommand) {
+        guard let session else { return }
+        Task { try? await session.send(command) }
     }
 
     func apply(_ frame: PiConversationFrame) throws {
-        if frame.type == "ack" {
-            guard frame.id == pending?.id, let command = pending else { return }
-            pending = nil
-            error = frame.error
-            if frame.error == nil, command.type == "prompt", draft == command.text { draft = "" }
-            return
-        }
+        if frame.type == "heartbeat" { return }
         guard frame.version == 1, let incomingEpoch = frame.epoch,
               let incomingSession = frame.sessionID, let incomingRevision = frame.revision else {
             throw PiConversationDecoder.invalidStream
@@ -167,19 +171,19 @@ final class PiConversationStore {
                   Set(incomingRows.map(\.id)).count == incomingRows.count else {
                 throw PiConversationDecoder.invalidStream
             }
-            if let pending, pending.epoch != incomingEpoch || pending.sessionID != incomingSession {
-                self.pending = nil
-                error = "Pi changed sessions or restarted. Delivery wasn't confirmed; review history before sending again."
-            } else if pending == nil { error = nil }
-            rows = incomingRows
+            // A reconnect or another session starts the screen afresh.
+            adopt(incomingRows, continuing: isConnected && incomingEpoch == epoch
+                && incomingSession == sessionID)
             epoch = incomingEpoch
             sessionID = incomingSession
             revision = incomingRevision
             isTruncated = frame.truncated ?? false
             isBusy = frame.busy ?? false
             blocked = frame.blocked
+            dialog = frame.dialog
+            settings = frame.settings
             isConnected = true
-            isConnecting = false
+            isUnavailable = false
         } else {
             guard incomingEpoch == epoch, incomingSession == sessionID else {
                 throw PiConversationDecoder.invalidStream
@@ -189,12 +193,18 @@ final class PiConversationStore {
             guard incomingRevision == revision + 1 else { throw PiConversationDecoder.invalidStream }
             revision = incomingRevision
             if frame.type == "message", let row = frame.row {
-                if let index = rows.firstIndex(where: { $0.id == row.id }) { rows[index] = row }
-                else { rows.append(row) }
-                if rows.count > 120 { rows.removeFirst(rows.count - 120); isTruncated = true }
+                var updated = rows
+                if let index = updated.firstIndex(where: { $0.id == row.id }) { updated[index] = row }
+                else { updated.append(row) }
+                if updated.count > 120 { updated.removeFirst(updated.count - 120); isTruncated = true }
+                adopt(updated, continuing: true)
             } else if frame.type == "status" {
                 isBusy = frame.busy ?? false
                 blocked = frame.blocked
+            } else if frame.type == "settings", let incoming = frame.settings {
+                settings = incoming
+            } else if frame.type == "dialog" {
+                dialog = frame.dialog
             }
         }
     }

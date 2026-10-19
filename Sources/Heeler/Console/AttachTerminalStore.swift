@@ -181,7 +181,8 @@ struct TerminalRecoveryGenerationLatch {
 /// with real cols/rows). A later resize never
 /// restarts anything: it rides in-band, which is the whole point of the PTY.
 /// One session per run; the remote attach exiting (the user detached inside
-/// the TUI, the pane closed) surfaces as `.ended` with reattach offered.
+/// the TUI, the pane closed) surfaces as `.ended` with reattach offered, while
+/// a recoverable channel failure reattaches on its own with backoff.
 @MainActor
 @Observable
 final class AttachTerminalStore {
@@ -231,6 +232,11 @@ final class AttachTerminalStore {
     private var session: TerminalAttachSession?
     private var inputGeneration: TerminalInputController.SessionGeneration?
     private var runTask: Task<Void, Never>?
+    /// Waits out the backoff before reattaching a channel that failed
+    /// recoverably while its Host may still be fine.
+    private var reattachTask: Task<Void, Never>?
+    private var reattachAttempt = 0
+    private let reattachDelay: @Sendable (Int) async throws -> Void
     #if DEBUG
     private(set) var restorationTrace = AttachRestorationTrace()
 
@@ -249,6 +255,9 @@ final class AttachTerminalStore {
             _, _ in
         },
         runDidFinish: @escaping @MainActor @Sendable (TerminalSurfaceID) -> Void = { _ in },
+        reattachDelay: @escaping @Sendable (Int) async throws -> Void = {
+            try await Task.sleep(for: .seconds($0))
+        },
         runTerminal: @escaping TerminalSessionRunner
     ) {
         self.target = target
@@ -259,6 +268,7 @@ final class AttachTerminalStore {
         self.finishOutput = finishOutput
         self.transportReady = transportReady
         self.runDidFinish = runDidFinish
+        self.reattachDelay = reattachDelay
         self.runTerminal = runTerminal
     }
 
@@ -272,6 +282,9 @@ final class AttachTerminalStore {
             _, _ in
         },
         runDidFinish: @escaping @MainActor @Sendable (TerminalSurfaceID) -> Void = { _ in },
+        reattachDelay: @escaping @Sendable (Int) async throws -> Void = {
+            try await Task.sleep(for: .seconds($0))
+        },
         runTerminal: @escaping TerminalSessionRunner
     ) {
         self.init(
@@ -283,6 +296,7 @@ final class AttachTerminalStore {
             finishOutput: finishOutput,
             transportReady: transportReady,
             runDidFinish: runDidFinish,
+            reattachDelay: reattachDelay,
             runTerminal: runTerminal)
     }
 
@@ -346,6 +360,8 @@ final class AttachTerminalStore {
     /// never depend on the channel becoming available.
     func stop(preservingPendingPaste: Bool = false) async {
         stopRequested = true
+        reattachTask?.cancel()
+        reattachTask = nil
         preservesPendingPasteOnStop = preservingPendingPaste
         if let session {
             await session.end()
@@ -402,11 +418,40 @@ final class AttachTerminalStore {
             try await runTerminal(request, handler)
         } catch {
             guard !stopRequested else { return }
-            status = .ended(Self.message(for: error))
+            if Self.reattachesAutomatically(after: error) {
+                // A dropped channel on a lossy link comes back on its own;
+                // keep showing progress rather than asking for Reattach.
+                status = .connecting
+                scheduleReattach()
+            } else {
+                status = .ended(Self.message(for: error))
+            }
             return
         }
         guard !stopRequested else { return }
         status = .ended("The session ended.")
+    }
+
+    /// Channel loss, not the remote attach exiting on purpose (a detach
+    /// inside the TUI, a closed pane), which still offers Reattach.
+    static func reattachesAutomatically(after error: any Error) -> Bool {
+        guard let error = error as? TransportError, error.isRetryable else { return false }
+        if case .attachExited = error { return false }
+        return true
+    }
+
+    /// 1, 2, 4, 8, 16, then every 30 seconds, until the owner stops this
+    /// pipeline (off stage, replaced Transport) or a session goes live.
+    private func scheduleReattach() {
+        let delay = min(1 << min(reattachAttempt, 5), 30)
+        reattachAttempt += 1
+        reattachTask = Task { [weak self, reattachDelay] in
+            do { try await reattachDelay(delay) } catch { return }
+            guard let self, !self.stopRequested, self.runTask == nil,
+                  self.status == .connecting else { return }
+            self.reattachTask = nil
+            self.start()
+        }
     }
 
     private func consume(
@@ -443,6 +488,7 @@ final class AttachTerminalStore {
                 // the bytes on screen.
                 if status == .connecting {
                     status = .live
+                    reattachAttempt = 0
                     input.sessionDidBecomeLive(inputGeneration)
                 }
                 #if DEBUG

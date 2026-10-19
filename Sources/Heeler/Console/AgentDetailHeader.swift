@@ -84,6 +84,63 @@ struct AgentDetailHeader: View {
     }
 }
 
+/// The header while the transcript covers the terminal: Back, then one glass
+/// capsule naming the Agent, as in a chat. The capsule opens the Agent's
+/// sheet, so no icon row competes with the conversation.
+struct AgentConversationHeader: View {
+    let palette: TerminalThemePalette
+    let avatar: Image
+    let name: String
+    /// The Host, when more than one could be meant.
+    var subtitle: String? = nil
+    let onBack: (() -> Void)?
+    let onOpen: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let onBack {
+                AgentDetailHeaderButton("Back", systemImage: "chevron.left", action: onBack)
+                    .headerGlass(in: .circle)
+            }
+            Button(action: onOpen) {
+                HStack(spacing: 8) {
+                    avatar
+                        .renderingMode(.original)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(verbatim: name)
+                            .font(.body.weight(.semibold))
+                            .lineLimit(1)
+                        if let subtitle {
+                            Text(verbatim: subtitle)
+                                .font(.caption2)
+                                .foregroundStyle(palette.foreground.opacity(0.58))
+                                .lineLimit(1)
+                        }
+                    }
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(palette.foreground.opacity(0.58))
+                }
+                .padding(.leading, 8)
+                .padding(.trailing, 14)
+                .frame(height: AgentDetailHeader.controlSize)
+                .contentShape(.capsule)
+            }
+            .buttonStyle(.plain)
+            .fixedSize(horizontal: false, vertical: true)
+            .headerGlass(in: .capsule)
+            // The capsule hugs its name; a long one truncates short of the
+            // screen's far edge.
+            Spacer(minLength: 48)
+        }
+        .foregroundStyle(palette.foreground)
+    }
+}
+
 /// One of `AgentDetailHeader`'s trailing buttons.
 struct AgentDetailHeaderAction: Identifiable {
     let title: LocalizedStringKey

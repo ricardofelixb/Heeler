@@ -41,3 +41,4 @@ __pycache__/
 
 # Lefthook per-developer overrides
 lefthook-local.yml
+scripts/remote-screen-viewer/node_modules/

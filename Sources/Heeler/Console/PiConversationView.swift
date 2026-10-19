@@ -1,13 +1,26 @@
 import SwiftUI
 
-/// A quiet native face for the same Pi session that's open on the computer.
+/// The same Pi session as the terminal underneath, drawn as a transcript.
+/// Read-only: the screen's own composer and keys type into Pi's terminal.
 struct PiConversationView: View {
-    @Bindable var store: PiConversationStore
-    let agent: ConsoleAgent
+    let store: PiConversationStore
+    let palette: TerminalThemePalette
     let isActive: Bool
     let connectionGeneration: UInt64?
-    let onTerminal: () -> Void
+    /// Where the floating header ends, from the top of the screen's surface,
+    /// which the transcript reaches by running under the status bar.
+    let headerBottom: CGFloat
+    /// Names what is connecting before the first messages arrive.
+    var hostName = ""
+    /// A drag or tap on the messages: the reader wants the screen back.
+    var onReading: () -> Void = {}
     @State private var followsLatest = true
+    @State private var transcriptBottom: CGFloat = 0
+    @State private var visibleBottom: CGFloat = 0
+    @State private var scrollPosition = ScrollPosition(edge: .bottom)
+    @State private var scrollPhase = ScrollPhase.idle
+    @State private var latestIsVisible = true
+    @State private var expandedTools: Set<String> = []
 
     private struct ConnectionIdentity: Equatable {
         let active: Bool
@@ -15,94 +28,197 @@ struct PiConversationView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let blocked = store.blocked {
-                HStack(alignment: .top) {
-                    Image(systemName: "hand.raised")
-                    Text(verbatim: blocked).font(.subheadline)
-                    Spacer(minLength: 0)
-                    Button("Open Terminal", action: onTerminal)
-                }
-                .padding().background(Color(.secondarySystemBackground))
-            }
-            if let error = store.error {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(verbatim: error).font(.subheadline).foregroundStyle(.secondary)
-                    if !store.isConnected { Button("Retry") { store.retry() } }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading).padding()
-            }
-            transcript
-        }
-        .background(Color(.systemBackground))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) { header }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: onTerminal) { Image(systemName: "terminal") }
-                    .accessibilityLabel("Open Pi Terminal")
-                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        // Stays mounted to keep observing while the terminal shows through.
+        ZStack {
+            if store.showsTranscript {
+                // How far the transcript runs on beneath the Composer. Measured,
+                // not read from the safe area: with the system keyboard up that
+                // inset also counts the keyboard the screen has already lifted
+                // its content above, which left a keyboard-sized gap.
+                transcript(composerHeight: max(0, transcriptBottom - visibleBottom))
+                    .transition(.opacity)
             }
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: {
+            visibleBottom = $0
+        }
+        .allowsHitTesting(store.showsTranscript)
+        .animation(.easeInOut(duration: 0.15), value: store.showsTranscript)
         .task(id: ConnectionIdentity(active: isActive, generation: connectionGeneration)) {
             if isActive { await store.observe() }
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            if let image = UIImage(named: WorkspaceAgentPresentation.friendAsset(for: agent.id)) {
-                Image(uiImage: image).resizable().scaledToFit()
-                    .frame(width: 32, height: 32).accessibilityHidden(true)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: WorkspaceAgentPresentation.title(for: agent.agent))
-                    .font(.headline).lineLimit(1)
-                Text(store.blocked != nil ? "Needs input in Terminal" :
-                        store.isConnected ? (store.isBusy ? "Working · Pi" : "Connected · Pi") :
-                        store.isConnecting ? "Connecting to Pi…" : "Disconnected · Pi")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: 260)
-        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-    }
+    private var secondary: Color { palette.foreground.opacity(0.6) }
+    private var surface: Color { palette.foreground.opacity(0.08) }
 
-    private var transcript: some View {
-        ScrollViewReader { reader in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 24) {
-                    if store.isTruncated {
-                        Text("Recent conversation · older history in Terminal")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if store.rows.isEmpty {
-                        ContentUnavailableView(
-                            store.isConnected ? "You're in the same Pi session" : "Your Pi, on your phone",
-                            systemImage: "bubble.left.and.bubble.right",
-                            description: Text(store.isConnected ?
-                                "Messages from either device appear here." :
-                                "The companion extension mirrors your existing terminal session. Nothing new is launched."))
-                    }
-                    ForEach(store.rows) { row in
-                        message(row)
-                    }
-                    Color.clear.frame(height: 1).id("latest")
+    /// Runs beneath the header and composer, fading into the background at
+    /// both ends so messages pass under the glass rather than being cut off.
+    private func transcript(composerHeight: CGFloat) -> some View {
+        ScrollView {
+            // History is bounded to 120 rows. Lay out its real heights once,
+            // rather than correcting lazy estimates while opening at the end.
+            VStack(alignment: .leading, spacing: 24) {
+                if store.isTruncated {
+                    Text("Recent conversation · older history in Terminal")
+                        .font(.caption).foregroundStyle(secondary)
                 }
-                .padding(20)
+                ForEach(PiConversationItem.grouped(store.rows, displayID: store.displayID)) { item in
+                    switch item {
+                    case .message(let row, let id): message(row, displayID: id)
+                    case .tools(let id, let rows): tools(id: id, rows: rows)
+                    }
+                }
             }
-            .defaultScrollAnchor(.bottom)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 80
-            } action: { _, value in followsLatest = value }
-            .onChange(of: store.rows) {
-                if followsLatest { reader.scrollTo("latest", anchor: .bottom) }
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .contentMargins(.top, headerBottom + 16, for: .scrollContent)
+        // Clears the fade above the Composer, so the last message rests on
+        // solid background rather than dissolving into the status line.
+        .contentMargins(.bottom, composerHeight + 48, for: .scrollContent)
+        .overlay(alignment: .top) {
+            PiEdgeFade(edge: .top, color: palette.background)
+                .frame(height: headerBottom + 48)
+        }
+        .overlay(alignment: .bottom) {
+            // Solid under the whole Composer, its status line included, so
+            // messages fade out above it rather than behind its text.
+            VStack(spacing: 0) {
+                PiEdgeFade(edge: .bottom, color: palette.background)
+                    .frame(height: 48)
+                palette.background
+                    .frame(height: composerHeight)
             }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+        // Back to the latest message, once you've scrolled away from it.
+        .overlay(alignment: .bottom) {
+            if !latestIsVisible && !store.rows.isEmpty {
+                Button {
+                    followsLatest = true
+                    withAnimation(.smooth) { scrollPosition.scrollTo(edge: .bottom) }
+                } label: {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 40, height: 40)
+                        .background(surface, in: Circle())
+                        .background(palette.background, in: Circle())
+                        .overlay(Circle().strokeBorder(secondary.opacity(0.25), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Scroll to latest")
+                .padding(.bottom, composerHeight + 12)
+                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
+        }
+        .modifier(SystemScrollEdgeHidden())
+        .background(palette.background)
+        // Inside the safe-area extension, so this sees where the transcript
+        // really ends rather than where it was laid out.
+        .background {
+            Color.clear
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: {
+                    transcriptBottom = $0
+                }
+        }
+        .ignoresSafeArea(.container, edges: .vertical)
+        .foregroundStyle(palette.foreground)
+        .scrollDismissesKeyboard(.interactively)
+        .scrollPosition($scrollPosition)
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(.top, for: .alignment)
+        // The keyboard coming up shrinks the transcript; keep its end in view.
+        .defaultScrollAnchor(.bottom, for: .sizeChanges)
+        .overlay {
+            if store.rows.isEmpty && !store.isConnected {
+                TerminalLoadingLine(
+                    title: hostName.isEmpty ? "Connecting…" : "Connecting to \(hostName)…",
+                    palette: palette)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: latestIsVisible)
+        .simultaneousGesture(TapGesture().onEnded { onReading() })
+        .onScrollPhaseChange { previous, phase in
+            scrollPhase = phase
+            if phase == .interacting { onReading() }
+            if phase == .interacting || (phase == .idle && previous == .decelerating) {
+                followsLatest = latestIsVisible
+            }
+        }
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            // The container size leaves out the room under the header and
+            // Composer; the visible rect, less what the Composer covers, doesn't.
+            geometry.visibleRect.maxY - geometry.contentInsets.bottom >= geometry.contentSize.height - 80
+        } action: { _, value in
+            latestIsVisible = value
+            // New tokens and keyboard layout aren't user scrolling.
+            // Only a drag may opt out of following the reply.
+            if scrollPhase == .interacting || scrollPhase == .decelerating {
+                followsLatest = value
+            }
+        }
+        .onChange(of: store.rows) {
+            if followsLatest { scrollPosition.scrollTo(edge: .bottom) }
+        }
+        // Your own message landing means you sent it: follow the reply even if
+        // you had scrolled back to read.
+        .onChange(of: store.rows.last { $0.role == "user" }?.id) { previous, latest in
+            guard previous != nil, latest != previous else { return }
+            followsLatest = true
+            scrollPosition.scrollTo(edge: .bottom)
+        }
+        .onChange(of: store.isBusy) {
+            if followsLatest { scrollPosition.scrollTo(edge: .bottom) }
+        }
+        // The keyboard settling moves the Composer, and with it the margin.
+        .onChange(of: composerHeight) {
+            if followsLatest { scrollPosition.scrollTo(edge: .bottom) }
+        }
+        .onChange(of: store.sessionID) {
+            expandedTools.removeAll()
+            followsLatest = true
+            scrollPosition.scrollTo(edge: .bottom)
         }
     }
 
-    @ViewBuilder private func message(_ row: PiConversationRow) -> some View {
+    private func tools(id: String, rows: [PiConversationRow]) -> some View {
+        DisclosureGroup(isExpanded: Binding(
+            get: { expandedTools.contains(id) },
+            set: { expanded in
+                if expanded {
+                    expandedTools.insert(id)
+                    followsLatest = false
+                } else {
+                    expandedTools.remove(id)
+                }
+            })) {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(rows) { message($0, displayID: $0.id) }
+            }
+            .padding(.top, 12)
+        } label: {
+            HStack(spacing: 8) {
+                // Running tools need no spinner: the status line says Working.
+                if !rows.contains(where: { $0.state == "running" }) {
+                    Image(systemName: rows.contains(where: { $0.state == "error" })
+                          ? "exclamationmark.circle" : "checkmark")
+                }
+                Text("Tools · \(rows.count)").font(.footnote)
+                Spacer(minLength: 0)
+                let failures = rows.filter { $0.state == "error" }.count
+                if failures > 0 { Text("\(failures) failed").font(.caption).foregroundStyle(.red) }
+            }
+            .foregroundStyle(secondary)
+        }
+        // Quiet, like a footnote: no card, just the line and its disclosure.
+        .tint(secondary)
+    }
+
+    @ViewBuilder private func message(_ row: PiConversationRow, displayID: String) -> some View {
         if row.role == "tool" {
             DisclosureGroup {
                 Text(verbatim: row.detail ?? "")
@@ -116,49 +232,158 @@ struct PiConversationView: View {
                     Text(verbatim: row.text).font(.subheadline)
                     if row.state == "error" { Text("Failed").font(.caption) }
                 }
-                .foregroundStyle(row.state == "error" ? .red : .secondary)
+                .foregroundStyle(row.state == "error" ? Color.red : secondary)
             }
-            .tint(.secondary)
+            .tint(secondary)
         } else if row.role == "user" {
-            HStack {
-                Spacer(minLength: 32)
-                Text(verbatim: row.text).textSelection(.enabled)
-                    .padding(14).background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+            // Sent while Pi works: faded until Pi takes it to steer.
+            let isQueued = row.state == "queued"
+            VStack(alignment: .trailing, spacing: 4) {
+                HStack {
+                    Spacer(minLength: 32)
+                    Text(verbatim: row.text).textSelection(.enabled)
+                        .padding(14).background(surface, in: RoundedRectangle(cornerRadius: 18))
+                        .opacity(isQueued ? 0.55 : 1)
+                        .modifier(PiPopIn(isFresh: store.freshUserIDs.contains(row.id)))
+                }
+                if isQueued {
+                    Label("Queued", systemImage: "clock")
+                        .font(.caption)
+                        .foregroundStyle(secondary)
+                }
             }
         } else if row.role == "notice" {
-            Text(verbatim: row.text).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            Text(verbatim: row.text).font(.caption).foregroundStyle(secondary).textSelection(.enabled)
         } else {
-            Text(.init(row.text)).textSelection(.enabled)
+            // A reply seen streaming keeps revealing; history shows at once.
+            PiStreamingText(text: row.text, reveals: displayID.hasPrefix("live:"))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
+}
 
-    private var composer: some View {
-        VStack(spacing: 8) {
-            Divider()
-            HStack(alignment: .bottom, spacing: 12) {
-                TextField(store.isBusy ? "Follow up with Pi…" : "Message Pi…", text: $store.draft, axis: .vertical)
-                    .lineLimit(1...6).padding(12)
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
-                    .accessibilityIdentifier("pi-conversation-composer")
-                if store.isBusy {
-                    Button { Task { await store.stop() } } label: {
-                        Image(systemName: "stop.circle").font(.title2).frame(width: 44, height: 44)
-                    }
-                    .disabled(!store.isConnected || store.pending != nil)
-                    .accessibilityLabel("Stop Pi")
+/// A reply as Pi writes it. The mirror sends text in bursts; this lets each
+/// burst run in over a moment, so the reply reads as written rather than
+/// jumping a paragraph at a time.
+private struct PiStreamingText: View {
+    let text: String
+    /// Characters on screen; nil shows the whole text.
+    @State private var shown: Int?
+
+    init(text: String, reveals: Bool) {
+        self.text = text
+        _shown = State(initialValue: reveals ? 0 : nil)
+    }
+
+    var body: some View {
+        Text(.init(shown.map { String(text.prefix($0)) } ?? text))
+            .textSelection(.enabled)
+            .task(id: text) {
+                guard var count = shown else { return }
+                let total = text.count
+                // About a quarter second per burst, whatever its length.
+                let step = max(1, (total - count) / 15)
+                while count < total, !Task.isCancelled {
+                    count = min(total, count + step)
+                    shown = count
+                    try? await Task.sleep(for: .milliseconds(16))
                 }
-                Button { Task { await store.sendPrompt() } } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.title).frame(width: 44, height: 44)
-                }
-                .disabled(!store.canSend)
-                .accessibilityLabel(store.isBusy ? "Queue follow-up" : "Send message")
             }
-            .padding(.horizontal, 16).padding(.bottom, 8)
-            if store.pending != nil {
-                Text("Confirming submission…").font(.caption).foregroundStyle(.secondary).padding(.bottom, 4)
+    }
+}
+
+/// Your message landing: a small, quick spring up from where it sits.
+private struct PiPopIn: ViewModifier {
+    @State private var isIn: Bool
+
+    init(isFresh: Bool) {
+        _isIn = State(initialValue: !isFresh)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isIn ? 1 : 0.88, anchor: .bottomTrailing)
+            .opacity(isIn ? 1 : 0)
+            .onAppear {
+                guard !isIn else { return }
+                withAnimation(.spring(duration: 0.35, bounce: 0.3)) { isIn = true }
+            }
+    }
+}
+
+/// The background closing in over an edge of the transcript, with a light
+/// blur under it, so text dissolves behind the header or composer.
+private struct PiEdgeFade: View {
+    let edge: VerticalEdge
+    let color: Color
+
+    var body: some View {
+        let mask = LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .black.opacity(0.18), location: 0.22),
+                .init(color: .black.opacity(0.62), location: 0.48),
+                .init(color: .black.opacity(0.92), location: 0.72),
+                .init(color: .black, location: 1),
+            ],
+            startPoint: edge == .top ? .bottom : .top,
+            endPoint: edge == .top ? .top : .bottom)
+        ZStack {
+            // Materials lighten a dark theme; at full strength the blur reads
+            // as a grey band around the header rather than a soft edge.
+            Rectangle().fill(.ultraThinMaterial).mask(mask).opacity(0.5)
+            color.mask(mask)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// iOS 26 dims a scroll view's edges under bars on its own; the edge fades
+/// already do that, and a second tint would show as a grey band.
+private struct SystemScrollEdgeHidden: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.scrollEdgeEffectHidden()
+        } else {
+            content
+        }
+    }
+}
+
+/// Presentation only: keep authoritative messages in order, collecting every
+/// tool call between user messages into the first tools row of that reply.
+enum PiConversationItem: Equatable, Identifiable {
+    case message(PiConversationRow, id: String)
+    case tools(id: String, rows: [PiConversationRow])
+
+    var id: String {
+        switch self {
+        case .message(_, let id): id
+        case .tools(let id, _): "tools-\(id)"
+        }
+    }
+
+    static func grouped(
+        _ rows: [PiConversationRow],
+        displayID: (PiConversationRow) -> String = \.id
+    ) -> [Self] {
+        var items: [Self] = []
+        var toolIndex: Int?
+        for row in rows {
+            if row.role == "user" { toolIndex = nil }
+            if row.role == "tool" {
+                if let toolIndex, case .tools(let id, var tools) = items[toolIndex] {
+                    tools.append(row)
+                    items[toolIndex] = .tools(id: id, rows: tools)
+                } else {
+                    toolIndex = items.count
+                    items.append(.tools(id: row.id, rows: [row]))
+                }
+            } else {
+                items.append(.message(row, id: displayID(row)))
             }
         }
-        .background(Color(.systemBackground))
+        return items
     }
 }

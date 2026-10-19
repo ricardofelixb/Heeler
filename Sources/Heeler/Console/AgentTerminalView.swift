@@ -204,6 +204,10 @@ struct AgentTerminalView: View {
     /// Edge-docked Workspace navigation; nil where the detail cannot route
     /// to other terminals.
     private let workspaceDrawer: WorkspaceTerminalDrawer?
+    /// Pi's transcript over the live terminal, a reading preference only:
+    /// input always goes through this screen's composer and keys.
+    private let piConversation: PiConversationStore?
+    @Binding private var showsConversation: Bool
     /// Follows the Agent's own session file for the usage strip (#325).
     @State private var sessionUsage = AgentSessionUsageStore()
     @State private var attach: AgentAttachStore
@@ -259,6 +263,7 @@ struct AgentTerminalView: View {
     @State private var attachLinksOrigin: AttachLinksOrigin?
     @State private var closeErrorMessage: String?
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -273,6 +278,7 @@ struct AgentTerminalView: View {
     @AppStorage("agent.back-header-expanded") private var isBackHeaderExpanded = false
     /// The Workspace drawer's panel, while the back header's button owns it.
     @State private var isHeaderDrawerOpen = false
+    @State private var isAgentSheetPresented = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// This view's own window, for hosts without a scene root.
     @State private var mountedWindow = WindowReference()
@@ -319,8 +325,12 @@ struct AgentTerminalView: View {
         onRetainDeparture: ((_ keepingKeyboard: Bool) -> Void)? = nil,
         workspaceDrawer: WorkspaceTerminalDrawer? = nil,
         inheritsKeyboardHandoff: Bool = true,
-        interactionProbe: AgentTerminalInteractionProbe? = nil
+        interactionProbe: AgentTerminalInteractionProbe? = nil,
+        piConversation: PiConversationStore? = nil,
+        showsConversation: Binding<Bool> = .constant(false)
     ) {
+        self.piConversation = piConversation
+        _showsConversation = showsConversation
         self.agent = agent
         self.console = console
         self.terminal = terminal
@@ -945,8 +955,9 @@ struct AgentTerminalView: View {
                         isShowingWorktree = true
                     }
                 } : nil,
-            renameAgent: { isRenamingAgent = true },
-            renameWorkspace: { isRenamingWorkspace = true },
+            // Pi's Agent sheet renames; other Agents keep it in this menu.
+            renameAgent: piConversation == nil ? { isRenamingAgent = true } : nil,
+            renameWorkspace: piConversation == nil ? { isRenamingWorkspace = true } : nil,
             closeAgent: { isConfirmingClose = true },
             backToConsole: { backToConsole() },
             closeConfirmation: anchorsClose
@@ -1009,13 +1020,27 @@ struct AgentTerminalView: View {
         .overlay(alignment: .bottomTrailing) {
             attachLinksChrome
         }
+        // Over the terminal's own scroll controls, under the drawer and
+        // status. Direct Input types into the visible terminal, so it shows.
+        .overlay {
+            if let piConversation, showsConversation, !isDirectInput {
+                PiConversationView(
+                    store: piConversation,
+                    palette: themePalette,
+                    isActive: scenePhase == .active && isOnStage(),
+                    connectionGeneration: console.hostConnectionGenerations[agent.hostID],
+                    headerBottom: backHeaderTop + AgentDetailHeader.controlSize,
+                    hostName: agent.hostName,
+                    onReading: dismissComposerKeyboard)
+            }
+        }
         // Above the floating buttons: the open panel covers them.
         .overlay {
             if let workspaceDrawer {
                 let drawer = keyboardCarryingDrawer(workspaceDrawer).palette(themePalette)
                 // The back header's button stands in for the edge handle
                 // while the header is out; folded, the handle comes back.
-                if isBackHeaderExpanded {
+                if isBackHeaderExpanded || isTranscriptVisible {
                     drawer.openedFromHeader(
                         $isHeaderDrawerOpen,
                         panelTop: backHeaderTop + AgentDetailHeader.controlSize + 8)
@@ -1077,24 +1102,62 @@ struct AgentTerminalView: View {
                 rateText: sessionUsage.showsTokenRate ? sessionUsage.usage.rateText : nil,
                 isReserved: agent.sessionFilePath != nil,
                 palette: themePalette)
+            // Keeps its room so the terminal underneath never resizes; the
+            // transcript runs up beneath the header instead.
+            .opacity(isTranscriptVisible ? 0 : 1)
+            .allowsHitTesting(!isTranscriptVisible)
         }
         // The navigation bar remains present only as the owner of the status
         // bar appearance. Its content stays hidden, while this inset keeps
         // terminal output below the system clock.
         .padding(.top, terminalTopInset)
         .overlay(alignment: .top) {
-            AgentDetailHeader(
-                palette: themePalette,
-                isExpanded: $isBackHeaderExpanded,
-                onBack: showsBackButton ? { dismiss() } : nil,
-                actions: backHeaderActions)
+            Group {
+                if isTranscriptVisible {
+                    AgentConversationHeader(
+                        palette: themePalette,
+                        avatar: WorkspaceAgentPresentation.avatar(for: agent.id),
+                        name: WorkspaceAgentPresentation.title(for: agent.agent),
+                        subtitle: console.hostStatuses.count > 1 ? agent.hostName : nil,
+                        onBack: showsBackButton ? { dismiss() } : nil,
+                        onOpen: { isAgentSheetPresented = true })
+                } else {
+                    AgentDetailHeader(
+                        palette: themePalette,
+                        isExpanded: $isBackHeaderExpanded,
+                        onBack: showsBackButton ? { dismiss() } : nil,
+                        actions: backHeaderActions)
+                }
+            }
             .environment(
                 \.colorScheme,
                 terminal.themes.selection(for: colorScheme).chromeColorScheme(for: colorScheme))
             .padding(.horizontal, 12)
             .padding(.top, backHeaderTop)
-            .onChange(of: isBackHeaderExpanded) { _, expanded in
-                if !expanded { isHeaderDrawerOpen = false }
+            .onChange(of: isBackHeaderExpanded || isTranscriptVisible) { _, hasHeader in
+                if !hasHeader { isHeaderDrawerOpen = false }
+            }
+        }
+        // Pi's questions, asked natively over the transcript.
+        .sheet(item: Binding(get: { pendingPiDialog }, set: { _ in })) { dialog in
+            if let piConversation {
+                PiDialogSheet(dialog: dialog) { piConversation.answer(dialog, $0) }
+                    .environment(
+                        \.colorScheme,
+                        terminal.themes.selection(for: colorScheme).chromeColorScheme(for: colorScheme))
+            }
+        }
+        .onChange(of: pendingPiDialog?.id) { _, id in
+            if id != nil { isAgentSheetPresented = false }
+        }
+        .sheet(isPresented: $isAgentSheetPresented) {
+            if let piConversation {
+                PiAgentSheet(
+                    store: piConversation,
+                    avatar: WorkspaceAgentPresentation.avatar(for: agent.id),
+                    name: WorkspaceAgentPresentation.title(for: agent.agent),
+                    actions: backHeaderActions + renameActions,
+                    host: console.host(for: agent.hostID))
             }
         }
         .onWindowControlsHeightChange { windowControlsHeight = $0 }
@@ -1141,10 +1204,37 @@ struct AgentTerminalView: View {
         AgentDetailHeader.top(outputTop: terminalTopInset, barRow: barRow)
     }
 
-    /// The Workspace's terminals, then Changes at the far end; each only
-    /// where this screen can offer it.
+    /// Whether the transcript covers the terminal right now, rather than
+    /// only being preferred: Pi's dialogs and Direct Input show the terminal.
+    /// Pi's open question, while the transcript stands in for the terminal.
+    private var pendingPiDialog: PiConversationDialog? {
+        isTranscriptVisible ? piConversation?.pendingDialog : nil
+    }
+
+    private var isTranscriptVisible: Bool {
+        guard let piConversation, showsConversation, !isDirectInput else { return false }
+        return piConversation.showsTranscript
+    }
+
+    /// The view toggle, the Workspace's terminals, then Changes at the far
+    /// end; each only where this screen can offer it. While the terminal
+    /// shows only because Pi asked for input there, the transcript comes
+    /// back on its own, so there is nothing to toggle.
     private var backHeaderActions: [AgentDetailHeaderAction] {
         var actions: [AgentDetailHeaderAction] = []
+        if isTranscriptVisible {
+            actions.append(AgentDetailHeaderAction(
+                title: "Show Terminal", systemImage: "apple.terminal"
+            ) { showsConversation = false })
+        } else if piConversation != nil, !showsConversation || isDirectInput {
+            actions.append(AgentDetailHeaderAction(
+                title: "Show Conversation", systemImage: "bubble.left.and.bubble.right"
+            ) {
+                // Conversation has no Direct Input; it brings the Composer back.
+                if isDirectInput { selectInputMode(.composer) }
+                showsConversation = true
+            })
+        }
         if workspaceDrawer != nil {
             actions.append(AgentDetailHeaderAction(
                 title: "Workspace Terminals", systemImage: "terminal"
@@ -1159,6 +1249,25 @@ struct AgentTerminalView: View {
                 title: "Changes", systemImage: "arrow.triangle.branch", perform: showChanges))
         }
         return actions
+    }
+
+    /// Renaming, offered by the Agent sheet rather than the Composer's menu.
+    private var renameActions: [AgentDetailHeaderAction] {
+        [
+            AgentDetailHeaderAction(title: "Rename Agent", systemImage: "pencil") {
+                isRenamingAgent = true
+            },
+            AgentDetailHeaderAction(title: "Rename Workspace", systemImage: "pencil.line") {
+                isRenamingWorkspace = true
+            },
+        ]
+    }
+
+    /// Puts away the system or Tools keyboard, leaving the Composer in place.
+    private func dismissComposerKeyboard() {
+        guard composerKeyboardPresentation != .hidden else { return }
+        prepareComposerKeyboardPresentation(.hidden)
+        composerKeyboardPresentation = .hidden
     }
 
     private func prepareComposerKeyboardPresentation(
@@ -1254,7 +1363,9 @@ struct AgentTerminalView: View {
             skills: skills,
             keyboardPresentation: $composerKeyboardPresentation,
             prepareKeyboardPresentation: prepareComposerKeyboardPresentation,
-            modeControl: composerModeControl,
+            // Direct Input types into the terminal, which Conversation
+            // covers; its Tools keys still reach Pi's dialogs.
+            modeControl: piConversation != nil && showsConversation ? nil : composerModeControl,
             keyboardHandoffID: directToComposerHandoffID,
             isKeyboardHandoffCurrent: { id in
                 isOnStage()
@@ -1262,7 +1373,20 @@ struct AgentTerminalView: View {
                     && directToComposerHandoffID == id
             },
             onFirstResponderRequest: composerFirstResponderRequest,
-            onKeyboardHandoffSettled: composerKeyboardHandoffSettled)
+            onKeyboardHandoffSettled: composerKeyboardHandoffSettled,
+            commands: piCommands,
+            backdrop: isTranscriptVisible ? themePalette.background : nil)
+    }
+
+    /// Pi's built-in and extension commands, as the mirror last reported them.
+    private var piCommands: [AgentSkill] {
+        var seen = Set<String>()
+        return (piConversation?.settings?.commands ?? []).compactMap { command in
+            guard seen.insert(command.name).inserted else { return nil }
+            return AgentSkill(
+                scope: .global, name: command.name,
+                description: command.description.isEmpty ? nil : command.description)
+        }
     }
 
     /// Attached to the control itself: a popover on the whole detail anchors
@@ -1781,6 +1905,9 @@ struct AgentTerminalView: View {
             }
         } else if let presentation = TerminalStatusPresentation(status: attach.terminalStatus) {
             switch presentation.kind {
+            case .connecting where isTranscriptVisible:
+                // The transcript says it is connecting, in one quiet line.
+                EmptyView()
             case .connecting:
                 // No dim: a reattach would otherwise flash the whole screen dark.
                 TerminalStatusDialog(

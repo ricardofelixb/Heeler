@@ -17,10 +17,11 @@ struct AgentDetailView: View {
     private let onSwitch: (ConsoleAgent.ID) -> Void
     private let onClosed: () -> Void
     private let onSelectTerminal: ((ConsoleTerminal) -> Void)?
-    /// Told whether a native surface (Changes or Pi Conversation) replaces
-    /// the terminal, so Console stops dressing the window's chrome for it.
+    /// Told whether Changes replaces the terminal, so Console stops dressing
+    /// the window's chrome for it.
     private let onShowsChanges: ((Bool) -> Void)?
-    @State private var showsPiConversation: Bool
+    /// Pi's transcript over its live terminal; a reading preference, not a mode.
+    @AppStorage("pi.shows-conversation") private var showsPiConversation = true
     private let piConversation: PiConversationStore?
     @State private var focus = AgentFocusCoordinator()
     @State private var hasAppeared = false
@@ -63,8 +64,7 @@ struct AgentDetailView: View {
         self.agent = agent
         self.console = console
         let isPi = agent.agent.kind.lowercased() == "pi"
-        piConversation = isPi ? console.piConversationStore(for: agent) : nil
-        _showsPiConversation = State(initialValue: isPi && attachStore == nil && composerStore == nil)
+        piConversation = isPi && attachStore == nil ? console.piConversationStore(for: agent) : nil
         self.terminal = terminal
         self.inputMode = inputMode
         self.hosts = hosts
@@ -171,7 +171,7 @@ struct AgentDetailView: View {
 
     /// The terminal is on screen: no Shell Terminal and no Changes over it.
     private var showsAgentTerminal: Bool {
-        !showsPiConversation && openTerminal.shell == nil && changes.store == nil
+        openTerminal.shell == nil && changes.store == nil
     }
 
     private func applyTerminalAccess() {
@@ -236,7 +236,7 @@ struct AgentDetailView: View {
             isHostReady: console.hostStatuses[agent.hostID] == .connected
                 && !console.hostsAwaitingSnapshot.contains(agent.hostID),
             isSceneActive: scenePhase == .active,
-            isOnStage: hasAppeared && isOnStage() && !showsPiConversation,
+            isOnStage: hasAppeared && isOnStage(),
             showsShellTerminal: openTerminal.shell != nil || openTerminal.isOpening)
     }
 
@@ -252,13 +252,7 @@ struct AgentDetailView: View {
 
     var body: some View {
         Group {
-            if showsPiConversation, let piConversation {
-                PiConversationView(
-                    store: piConversation, agent: agent,
-                    isActive: scenePhase == .active && hasAppeared && isOnStage(),
-                    connectionGeneration: console.hostConnectionGenerations[agent.hostID],
-                    onTerminal: { showsPiConversation = false })
-            } else if let shell = openTerminal.shell {
+            if let shell = openTerminal.shell {
                 ShellTerminalView(
                     store: shell,
                     agentID: agent.id,
@@ -315,28 +309,11 @@ struct AgentDetailView: View {
                     // Retention swaps `attach` on appear and rebuilds this
                     // view; the build before that swap is a placeholder and
                     // must not spend the keyboard handoff meant for the real one.
-                    inheritsKeyboardHandoff: !permitsRetention || retainedAgent != nil)
+                    inheritsKeyboardHandoff: !permitsRetention || retainedAgent != nil,
+                    piConversation: piConversation,
+                    showsConversation: $showsPiConversation)
                 .id(ObjectIdentifier(attach))
             }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if piConversation != nil && !showsPiConversation && openTerminal.shell == nil {
-                HStack {
-                    Button { showsPiConversation = true } label: {
-                        Label("Conversation", systemImage: "bubble.left.and.bubble.right")
-                    }
-                    Spacer()
-                    Text("Pi Terminal").font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.horizontal).padding(.vertical, 8)
-                .background(Color(.systemBackground))
-            }
-        }
-        .onChange(of: showsPiConversation) {
-            onShowsChanges?(showsPiConversation || changes.store != nil)
-            if showsPiConversation { attach.leaveForTerminalHandoff() }
-            else { applyTerminalAccess() }
-            updateFocus()
         }
         // Pushed as Hosts pushes a Host, so Back and the swipe are the
         // system's own; either one closes the presentation.
@@ -346,7 +323,6 @@ struct AgentDetailView: View {
         }
         .onAppear {
             hasAppeared = true
-            if showsPiConversation { onShowsChanges?(true) }
             prepareRetainedAgent()
             updateFocus()
         }
@@ -392,7 +368,7 @@ struct AgentDetailView: View {
         // Back from Changes: the terminal left as it does for the Agent list,
         // so it comes back the same way, through retention and rejoin.
         .onChange(of: changes.store == nil) { _, showsTerminal in
-            onShowsChanges?(showsPiConversation || !showsTerminal)
+            onShowsChanges?(!showsTerminal)
             if showsTerminal {
                 applyTerminalAccess()
                 if let text = changes.takePendingInsertion() {

@@ -14,6 +14,38 @@ Entries reference the pull request that made the change.
   same-pane Terminal fallback. Requires the opt-in `pi-extension` on macOS/Linux;
   other agents keep their terminal interface. (#1)
 
+- Personal fork preview: Pi's questions open as native sheets over the
+  conversation (pick one, yes or no, a line of text, and ask_user_question's
+  questionnaire); answering on either side closes the other. (#1)
+
+- Personal fork preview: the Pi conversation's friend capsule opens a sheet to
+  switch the model and thinking level and see context, token, and cost usage;
+  typing `/` suggests Pi's own and extension commands; scrolling or tapping the
+  messages puts the keyboard away. (#1)
+
+- Personal fork preview: the Agents tab is one chat-style list under an All
+  Hosts switcher, with agents waiting on you first, a status dot on each
+  friend, an unread dot for finished work, and rename beside pin on swipe.
+  Pi's "π - " title prefix is gone. (#1)
+
+- Personal fork preview: messages sent while Pi works show as faded "Queued"
+  bubbles until Pi takes them; the conversation's agent capsule fits its name
+  and shows the Host when more than one is paired; the status line above the
+  Composer keeps a solid background while the keyboard moves. (#1)
+
+- Personal fork preview: connecting and loading show a small spinner and one
+  quiet line instead of a card, in terminals and the Pi conversation alike;
+  failure cards with actions are unchanged. (#1)
+
+- Personal fork preview: scrolling back through a Pi conversation shows a down
+  arrow that returns to the latest message, and iPhone stays in portrait. (#1)
+
+- Personal fork preview: a Host's screen in the Agent sheet, found on its own.
+  Heeler looks for a VNC server over SSH and reads its password when the Host
+  keeps it readable, asking once otherwise (macOS Screen Sharing); a live
+  preview opens full-screen control with trackpad touch and a keyboard,
+  tunnelled over SSH so the VNC server can stay on the Host's loopback. (#1)
+
 - Personal fork preview: a quieter By Workspace agent list with stable friend
   avatars, task-first titles, and compact status labels. New installations start
   By Workspace; saved presentation choices are preserved. (#1)
@@ -28,6 +60,17 @@ Entries reference the pull request that made the change.
   this app does not know now asks you to update Heeler. (#432)
 
 ### Fixed
+
+- Personal fork preview: Pi Conversation is a transcript over the live
+  terminal on the normal Agent screen, using the same composer, so slash
+  commands, attachments, dialogs and busy steering all work; a header button
+  switches between transcript and terminal instantly. Tools collapse into one
+  row per reply and history opens at the latest message. Its header is one
+  glass capsule with the Agent's friend and name, holding the screen's
+  actions, and messages fade out beneath the header and composer.
+- Personal fork preview: connections heal on their own. Pi Conversation keeps
+  retrying and detects stalled streams, a dropped terminal channel reconnects
+  without Reattach, and changing networks re-checks every Host at once.
 
 - Closing a connection through a Tailscale network no longer risks shutting
   down an unrelated connection that reused its file descriptor. Tailscale

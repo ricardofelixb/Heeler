@@ -42,6 +42,7 @@ struct LicenseNoticeInventoryTests {
         "miniupnpc",
         "prometheus-cpp-lite",
         "concurrentqueue",
+        "noVNC",
     ]
 
     /// Overlay notices are copied verbatim from the heeler-overlay-natives

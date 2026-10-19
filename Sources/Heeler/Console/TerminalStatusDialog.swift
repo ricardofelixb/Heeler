@@ -87,6 +87,16 @@ struct TerminalStatusDialog<Actions: View>: View {
     private static var cornerRadius: CGFloat { 20 }
 
     var body: some View {
+        // Something still under way, with nothing to choose: one quiet line,
+        // not a card. A card is for a state that waits on the reader.
+        if case .progress = glyph, Actions.self == EmptyView.self {
+            TerminalLoadingLine(title: title, palette: palette)
+        } else {
+            card
+        }
+    }
+
+    private var card: some View {
         ZStack {
             if dimsBackground {
                 Rectangle()
@@ -140,6 +150,25 @@ struct TerminalStatusDialog<Actions: View>: View {
     /// for a popup, and it works for a light theme and a dark one alike.
     private var cardBackground: Color {
         palette.background.mix(with: palette.foreground, by: 0.08)
+    }
+}
+
+/// The app's one loader: a small spinner and a short line, in the terminal's
+/// foreground, faded so it never competes with what it is waiting for.
+struct TerminalLoadingLine: View {
+    let title: String
+    var palette: TerminalThemePalette = .system
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .controlSize(.small)
+                .tint(palette.foreground.opacity(0.6))
+            Text(title)
+                .font(.footnote)
+                .foregroundStyle(palette.foreground.opacity(0.6))
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

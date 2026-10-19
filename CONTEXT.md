@@ -186,13 +186,14 @@ returns after a herdr restart stays pinned.
 _Avoid_: favorite, star, bookmark
 
 **Pi Conversation** (personal fork):
-The default detail for a Pi Agent: native text messages, expandable tool activity,
-a local draft and Stop, mirrored from the existing Pi process by an opt-in
-extension over SSH. It neither starts a second Agent nor parses the terminal.
-Terminal opens the same Pane for slash commands, attachments and unsupported
-extension UI. Other agent kinds keep Attach. Pi owns the conversation and agent
-lifetime; leaving the view only disconnects its stream. Recent native history is
-bounded; full history remains in Pi. See [ADR 0024](docs/adr/0024-pi-session-conversation-mirror.md).
+A read-only transcript of a Pi Agent's session (text messages, tool activity
+grouped per reply) drawn over its live Attach terminal on the normal Agent
+detail, mirrored from the existing Pi process by an opt-in extension over SSH.
+It neither starts a second Agent nor parses the terminal, and has no input of
+its own: the Composer and tools keyboard type into Pi's terminal. A header
+toggle picks transcript or terminal; dialogs and a down mirror show the
+terminal. Other agent kinds keep Attach alone. Pi owns the conversation and
+agent lifetime. Recent native history is bounded; full history remains in Pi. See [ADR 0024](docs/adr/0024-pi-session-conversation-mirror.md).
 _Avoid_: separate chat agent, transcript scraping
 
 **Composer**:
@@ -208,8 +209,8 @@ Blocked: Send then inserts the draft into Attach without Enter, and the tools
 keyboard submits or cancels. Delivered means the Host accepted the text into
 the pane — whether the Agent queues or acts on it is the Agent's business,
 and the Composer never claims otherwise.
-Composer remains the default authored-input path on terminal-based Agent detail;
-Pi Conversation has its own native draft/send path through Pi's extension API. Direct Input
+Composer remains the default authored-input path on Agent detail, Pi
+Conversation included. Direct Input
 is an explicit, opt-in alternative that hides the Composer card without
 clearing or submitting the draft.
 _Avoid_: reply bar, compose bar (the shelved predecessors), input box, message box

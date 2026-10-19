@@ -119,11 +119,11 @@ enum TideGitPalette {
     static let branch = DiffPalette.adaptive(light: 0x8839EF, dark: 0xCBA6F7)
 }
 
-/// The Tide git item in Agent detail's status line, at that line's size.
-/// Only the branch takes a color; the counts stay secondary, so the
-/// line's colors are the branch and the Checkout totals beside it, which
-/// the staged count's "+" would otherwise echo. Only the branch gives way
-/// when the line is short of room.
+/// The Tide git item in Agent detail's status line, at that line's size:
+/// just the branch. Tide's file counts ("!3 ?1") read as noise on a phone;
+/// the Checkout totals beside it already say there are changes, and
+/// VoiceOver still hears the counts. The branch gives way when the line is
+/// short of room.
 struct TideGitPrompt: View {
     let store: ChangesStore
     var font: Font = .caption2.weight(.medium)
@@ -132,24 +132,17 @@ struct TideGitPrompt: View {
         if let item = TideGitItem(
             phase: store.phase, timedOutKeepingContent: store.timedOutKeepingContent)
         {
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Image(systemName: "arrow.triangle.branch")
-                        .imageScale(.small)
-                        .foregroundStyle(Color(uiColor: TideGitPalette.branch))
-                    if item.isDetached {
-                        Text(verbatim: "@").foregroundStyle(.primary)
-                    }
-                    Text(verbatim: item.location)
-                        .foregroundStyle(Color(uiColor: TideGitPalette.branch))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Image(systemName: "arrow.triangle.branch")
+                    .imageScale(.small)
+                    .foregroundStyle(Color(uiColor: TideGitPalette.branch))
+                if item.isDetached {
+                    Text(verbatim: "@").foregroundStyle(.primary)
                 }
-                ForEach(Array(item.counts.enumerated()), id: \.offset) { _, count in
-                    Text(verbatim: count)
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
-                }
+                Text(verbatim: item.location)
+                    .foregroundStyle(Color(uiColor: TideGitPalette.branch))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
             .font(font)
             .monospacedDigit()

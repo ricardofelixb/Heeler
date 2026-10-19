@@ -74,8 +74,9 @@ struct AgentComposerActions {
     /// offering a dead button.
     let showSkills: (() -> Void)?
     let showWorktreeDetails: (() -> Void)?
-    let renameAgent: () -> Void
-    let renameWorkspace: () -> Void
+    /// Nil when the Agent sheet offers renaming instead, which hides the entry.
+    let renameAgent: (() -> Void)?
+    let renameWorkspace: (() -> Void)?
     let closeAgent: () -> Void
     /// Leaves the Agent the way its edge swipe does: back to the Console
     /// list, or out to the sidebar beside an iPad's detail column.
@@ -174,6 +175,11 @@ struct AgentComposerView: View {
     /// Drop is Composer-only. Defaults to Composer so existing call sites stay
     /// a drop target; Direct Input must pass `.direct` to keep this inert.
     var inputMode: AgentInputMode = .composer
+    /// The agent's own slash commands, suggested on `/` beside its skills.
+    var commands: [AgentSkill] = []
+    /// A solid ground under the status line and everything below it, for a
+    /// screen whose content scrolls behind the Composer.
+    var backdrop: Color? = nil
     @State private var isInputFocused = false
     /// An explicit dismissal hides suggestions for the current trigger token;
     /// removing the token arms them again.
@@ -196,6 +202,25 @@ struct AgentComposerView: View {
                     hostTelemetry: hostTelemetry,
                     changes: changes,
                     chromeColorScheme: chromeColorScheme)
+                    // Drawn before the field and the strip, so it lies under
+                    // them; it runs past the screen's sides and foot, with a
+                    // short fade above the line.
+                    .background(alignment: .top) {
+                        if let backdrop {
+                            VStack(spacing: 0) {
+                                LinearGradient(
+                                    colors: [backdrop.opacity(0), backdrop],
+                                    startPoint: .top, endPoint: .bottom)
+                                    .frame(height: 20)
+                                backdrop
+                            }
+                            .padding(.top, -26)
+                            .padding(.horizontal, -60)
+                            .padding(.bottom, -600)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        }
+                    }
 
                 VStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -204,6 +229,7 @@ struct AgentComposerView: View {
                         {
                             AgentComposerSkillSuggestions(
                                 skills: skills,
+                                commands: commands,
                                 trigger: trigger,
                                 onSelect: { skill in
                                     store.replaceTrailingToken(
@@ -381,6 +407,11 @@ struct AgentComposerView: View {
                 setKeyboardPresentation(.hidden)
             }
         }
+        // The screen can put the keyboard away (a tap on the transcript);
+        // let go of the text too, so the next tap into it asks again.
+        .onChange(of: keyboardPresentation) { _, presentation in
+            if presentation == .hidden, isInputFocused { isInputFocused = false }
+        }
         .onChange(of: store.draft) { _, _ in
             guard let skills else { return }
             if suggestionTrigger == nil {
@@ -399,7 +430,8 @@ struct AgentComposerView: View {
     private var suggestionTrigger: SkillSuggestionTrigger? {
         guard let skills else { return nil }
         return SkillSuggestionTrigger.detect(
-            draft: store.draft, prefixes: skills.triggerPrefixes)
+            draft: store.draft,
+            prefixes: skills.triggerPrefixes + (commands.isEmpty ? [] : ["/"]))
     }
 
     private var isKeyboardPresented: Bool {
@@ -504,6 +536,7 @@ struct AgentComposerView: View {
 /// happens to contain a prefix is not nagged.
 private struct AgentComposerSkillSuggestions: View {
     let skills: SkillsPaneStore
+    let commands: [AgentSkill]
     let trigger: SkillSuggestionTrigger
     let onSelect: (AgentSkill) -> Void
     let onDismiss: () -> Void
@@ -515,11 +548,16 @@ private struct AgentComposerSkillSuggestions: View {
     private static let maximumListHeight: CGFloat = 176
 
     var body: some View {
+        let commandMatches = trigger.matches(in: commands)
         switch skills.phase {
         case .idle, .loading:
-            header {
-                ProgressView()
-                    .controlSize(.small)
+            if commandMatches.isEmpty {
+                header {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            } else {
+                list(commandMatches)
             }
         case .failed(let message):
             VStack(alignment: .leading, spacing: 4) {
@@ -533,35 +571,39 @@ private struct AgentComposerSkillSuggestions: View {
                     .lineLimit(2)
             }
         case .loaded:
-            let matches = trigger.matches(in: skills.skills)
-            if !matches.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    header { EmptyView() }
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(matches) { skill in
-                                row(for: skill)
-                            }
-                        }
-                        .onGeometryChange(for: CGFloat.self) { proxy in
-                            proxy.size.height
-                        } action: { height in
-                            listHeight = height
+            list(commandMatches + trigger.matches(in: skills.skills))
+        }
+    }
+
+    @ViewBuilder
+    private func list(_ matches: [AgentSkill]) -> some View {
+        if !matches.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                header { EmptyView() }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(matches) { skill in
+                            row(for: skill)
                         }
                     }
-                    .frame(height: min(listHeight, Self.maximumListHeight))
-                    .scrollBounceBehavior(.basedOnSize)
-                    Divider()
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.height
+                    } action: { height in
+                        listHeight = height
+                    }
                 }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel("Skill Suggestions")
+                .frame(height: min(listHeight, Self.maximumListHeight))
+                .scrollBounceBehavior(.basedOnSize)
+                Divider()
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Skill Suggestions")
         }
     }
 
     private func header(@ViewBuilder trailing: () -> some View) -> some View {
         HStack(spacing: 8) {
-            Text("Skills")
+            Text(commands.isEmpty ? "Skills" : "Commands")
                 .font(.caption.weight(.semibold))
                 .textCase(.uppercase)
                 .foregroundStyle(.secondary)

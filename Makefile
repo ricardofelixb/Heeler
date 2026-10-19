@@ -7,10 +7,11 @@
 PROJECT := Heeler.xcodeproj
 SCHEME  := Heeler
 ARCHIVE := build/Heeler.xcarchive
+ARCHIVE_CONFIGURATION ?= Release
 DERIVED_DEVICE ?= build/DerivedData-device
 DERIVED_SIMULATOR ?= build/DerivedData-simulator
 DERIVED ?= $(DERIVED_DEVICE)
-APP_ID  := dev.bybee.heeler
+APP_ID  := dev.ricardofelixb.heeler
 SIM     ?= iPhone 17
 SIM_IPAD ?= iPad Pro 13-inch (M5)
 SIM_DESTINATION ?= platform=iOS Simulator,name=$(SIM)
@@ -27,7 +28,7 @@ IOS_WATCH_DEBOUNCE ?= 1s
 DEVICE ?= $(shell python3 scripts/find-ios-device.py iPhone)
 DEVICE_IPAD ?= $(shell python3 scripts/find-ios-device.py iPad)
 
-.PHONY: help generate resolve build test test-app test-ipad test-ci-app test-ci-package test-ci-evidence test-ci-background-build test-tools test-ci-guards test-ci-watchdog test-ci-recovery check-agent-docs check-test-membership simulator-ui build-device install install-ipad watch-ios-device sim sim-ipad build-sim sim-id archive upload testflight bump publish clean check-device check-device-ipad ssh-artifacts verify-ssh-artifacts
+.PHONY: help generate resolve build test test-app test-ipad test-ci-app test-ci-package test-ci-evidence test-ci-background-build test-tools test-ci-guards test-ci-watchdog test-ci-recovery check-agent-docs check-test-membership simulator-ui build-device install install-ipad watch-ios-device sim sim-ipad build-sim sim-id ipa archive upload testflight bump publish clean check-device check-device-ipad ssh-artifacts verify-ssh-artifacts
 
 # Command-line DERIVED overrides remain supported for either platform.
 test-app test-directory-browser-ui sim build-sim sim-id: DERIVED = $(DERIVED_SIMULATOR)
@@ -195,11 +196,18 @@ sim-id: build-sim ## Install and launch the app on SIMULATOR_UDID only
 	xcrun simctl install '$(SIMULATOR_UDID)' $(DERIVED)/Build/Products/Debug-iphonesimulator/Heeler.app
 	xcrun simctl launch --terminate-running-process '$(SIMULATOR_UDID)' $(APP_ID)
 
+ipa: ## Export a development-signed IPA for a registered iPhone (no upload)
+	$(MAKE) archive ARCHIVE=build/Heeler-Dev.xcarchive ARCHIVE_CONFIGURATION=Debug
+	xcodebuild -exportArchive -archivePath build/Heeler-Dev.xcarchive \
+		-exportOptionsPlist scripts/ExportOptions-Development.plist \
+		-exportPath build/device-export -allowProvisioningUpdates
+
 archive: generate ## Archive a Release build for distribution
 	@# HEELER_SOURCE_REVISION names the commit in About › Acknowledgements;
 	@# empty unless HEAD is pushed and only the build number is uncommitted.
-	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
+	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration $(ARCHIVE_CONFIGURATION) \
 		-destination 'generic/platform=iOS' -archivePath $(ARCHIVE) \
+		-clonedSourcePackagesDirPath .ci/source-packages \
 		-allowProvisioningUpdates HEELER_SOURCE_REVISION=$$(scripts/source-revision.sh) archive
 
 upload: ## Upload the existing archive to App Store Connect (TestFlight)

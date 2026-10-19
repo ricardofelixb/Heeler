@@ -240,6 +240,14 @@
       "source": "libzt 7e5d0f99a2de81c45faa28e44289bcd19d933bf2/ext/concurrentqueue",
       "spdx": "BSD-2-Clause",
       "notice": "concurrentqueue-BSD-2-Clause.txt"
+    },
+    {
+      "id": "noVNC",
+      "displayName": "noVNC",
+      "version": "1.7.0",
+      "source": "https://github.com/novnc/noVNC (npm @novnc/novnc 1.7.0, bundled with its vendored pako into RemoteScreenViewer.html by scripts/remote-screen-viewer)",
+      "spdx": "MPL-2.0 AND BSD-3-Clause AND MIT",
+      "notice": "noVNC-MPL-2.0.txt"
     }
   ]
 }

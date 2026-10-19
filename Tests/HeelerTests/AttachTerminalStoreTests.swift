@@ -13,10 +13,13 @@ import UIKit
 struct AttachTerminalStoreTests {
     private func makeStore(
         transport: ScriptedTransport?, target: String = "w1:p1", takeover: Bool = false,
-        input: TerminalInputController = TerminalInputController()
+        input: TerminalInputController = TerminalInputController(),
+        reattachDelay: @escaping @Sendable (Int) async throws -> Void = {
+            try await Task.sleep(for: .seconds($0))
+        }
     ) -> (AttachTerminalStore, captured: Captured) {
         let store = AttachTerminalStore(
-            target: target, takeover: takeover, input: input
+            target: target, takeover: takeover, input: input, reattachDelay: reattachDelay
         ) { request, handler in
             guard let transport else {
                 throw TransportError.sshUnreachable(detail: "The Host is not connected.")
@@ -275,27 +278,33 @@ struct AttachTerminalStoreTests {
         await store.stop()
     }
 
-    @Test func channelFailureSurfacesItsMessage() async throws {
+    @Test func channelFailureReattachesOnItsOwn() async throws {
         let transport = ScriptedTransport()
-        let (store, _) = makeStore(transport: transport)
+        let (store, _) = makeStore(transport: transport, reattachDelay: { _ in })
 
         try await goLive(store, transport)
 
         await transport.failAttachStream(.channelFailed(detail: "host went away"))
-        try await waitUntil("the failure should surface") {
-            if case .ended = store.status { return true }
-            return false
+        try await paint(transport)
+        try await waitUntil("a dropped channel should come back without Reattach") {
+            await transport.attachRequests.count == 2 && store.status == .live
         }
 
         await store.stop()
     }
 
-    @Test func missingTransportEndsActionably() async throws {
-        let (store, _) = makeStore(transport: nil)
-        store.viewDidResize(cols: 80, rows: 24)
-        try await waitUntil("the store should surface the missing transport") {
-            store.status == .ended("The Host is not connected.")
+    @Test func missingTransportKeepsReconnectingWithBackoff() async throws {
+        let delays = DelayLog()
+        let (store, _) = makeStore(transport: nil) { delay in
+            // Three waits, then park: the owner's stop() ends a real backoff.
+            guard await delays.append(delay) < 3 else { throw CancellationError() }
         }
+        store.viewDidResize(cols: 80, rows: 24)
+        try await waitUntil("the store should back off instead of ending") {
+            await delays.values == [1, 2, 4]
+        }
+        #expect(store.status == .connecting)
+        await store.stop()
     }
 
     /// #151: when a store is the refused second consumer, the refusal must
@@ -3201,5 +3210,13 @@ struct TerminalByteFeedTests {
 
         feed.write(Data())
         #expect(surface.chunks.isEmpty)
+    }
+}
+
+private actor DelayLog {
+    private(set) var values: [Int] = []
+    func append(_ value: Int) -> Int {
+        values.append(value)
+        return values.count
     }
 }

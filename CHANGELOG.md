@@ -29,6 +29,10 @@ Entries reference the pull request that made the change.
   and shows the Host when more than one is paired; the status line above the
   Composer keeps a solid background while the keyboard moves. (#1)
 
+- Personal fork preview: connecting and loading show a small spinner and one
+  quiet line instead of a card, in terminals and the Pi conversation alike;
+  failure cards with actions are unchanged. (#1)
+
 - Personal fork preview: a quieter By Workspace agent list with stable friend
   avatars, task-first titles, and compact status labels. New installations start
   By Workspace; saved presentation choices are preserved. (#1)

@@ -114,8 +114,9 @@ struct PiConversationView: View {
         .defaultScrollAnchor(.bottom, for: .sizeChanges)
         .overlay {
             if store.rows.isEmpty && !store.isConnected {
-                Text(hostName.isEmpty ? "Connecting…" : "Connecting to \(hostName)…")
-                    .font(.footnote).foregroundStyle(secondary)
+                TerminalLoadingLine(
+                    title: hostName.isEmpty ? "Connecting…" : "Connecting to \(hostName)…",
+                    palette: palette)
             }
         }
         .simultaneousGesture(TapGesture().onEnded { onReading() })

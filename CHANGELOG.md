@@ -24,6 +24,11 @@ Entries reference the pull request that made the change.
   friend, an unread dot for finished work, and rename beside pin on swipe.
   Pi's "π - " title prefix is gone. (#1)
 
+- Personal fork preview: messages sent while Pi works show as faded "Queued"
+  bubbles until Pi takes them; the conversation's agent capsule fits its name
+  and shows the Host when more than one is paired; the status line above the
+  Composer keeps a solid background while the keyboard moves. (#1)
+
 - Personal fork preview: a quieter By Workspace agent list with stable friend
   avatars, task-first titles, and compact status labels. New installations start
   By Workspace; saved presentation choices are preserved. (#1)

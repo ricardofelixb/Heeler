@@ -44,6 +44,10 @@ actor DemoPiConversation {
                 }
             }
         }
+        if ProcessInfo.processInfo.arguments.contains("--demo-pi-queued") {
+            rows.append(.init(id: "demo-queued", role: "user",
+                              text: "Also keep the pin icon.", state: "queued"))
+        }
     }
 
     private func snapshot() -> PiConversationFrame {

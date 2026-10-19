@@ -14,6 +14,8 @@ export default function (pi: ExtensionAPI) {
     catch (error) { ctx.ui.notify(`Heeler mirror: ${String(error)}`, "error"); }
   });
   pi.on("session_shutdown", () => bridge.stop());
+  // Observes only: the input still goes to Pi as typed.
+  pi.on("input", (event, ctx) => { bridge.queue(event, ctx); return { action: "continue" }; });
   pi.on("message_start", (event, ctx) => bridge.event(event, ctx));
   pi.on("message_update", (event, ctx) => bridge.event(event, ctx));
   pi.on("message_end", (event, ctx) => bridge.event(event, ctx));

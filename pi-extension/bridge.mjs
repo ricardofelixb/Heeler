@@ -10,6 +10,7 @@ export const MAX_LINE_BYTES = 1_048_576;
 export const HEARTBEAT_MS = 15_000;
 const MAX_TEXT = 6_000;
 const MAX_ROWS = 120;
+const MAX_QUEUED = 8;
 const clip = (text) => {
   const value = String(text ?? "");
   return value.length > MAX_TEXT ? `${value.slice(0, MAX_TEXT)}\n[…more in Terminal]` : value;
@@ -111,6 +112,8 @@ export class PiMirrorBridge {
     this.revision = 0;
     this.branchRevision = 0;
     this.toolRows = new Map();
+    this.queued = [];
+    this.queuedCount = 0;
     this.live = undefined;
     this.blocked = undefined;
   }
@@ -177,6 +180,8 @@ export class PiMirrorBridge {
       if (!rows.some((existing) => existing.id === row.id)) rows.push(row);
     }
     if (this.live) rows.push(this.live);
+    // Sent while Pi works: waiting to steer, shown after everything else.
+    rows.push(...this.queued.map((entry) => ({ id: entry.id, role: "user", text: entry.text, state: "queued" })));
     const truncated = history.truncated || rows.length > MAX_ROWS;
     rows = rows.slice(-MAX_ROWS);
     const frame = { type: "snapshot", version: 1, epoch: this.epoch, revision: this.revision,
@@ -255,22 +260,46 @@ export class PiMirrorBridge {
     for (const client of this.clients) this.write(client, value);
   }
 
-  refresh(ctx) {
+  /** Another session starts clean: its tools, prompt and queue are not this one's. */
+  adopt(ctx) {
     this.ctx = ctx;
     const sessionID = ctx.sessionManager.getSessionId();
     if (this.sessionID !== sessionID) {
       this.toolRows.clear();
       this.blocked = undefined;
+      this.queued = [];
       this.sessionID = sessionID;
     }
+  }
+
+  refresh(ctx) {
+    this.adopt(ctx);
     this.live = undefined;
     clearTimeout(this.flushTimer);
     this.flushTimer = undefined;
     this.broadcast(this.snapshot());
   }
 
+  /** Pi took a message typed while it was busy; the phone shows it as queued until then. */
+  queue(event, ctx) {
+    this.adopt(ctx);
+    if (!event.streamingBehavior) return;
+    const text = clip(String(event.text ?? "").trim());
+    if (!text) return;
+    this.queuedCount += 1;
+    this.queued.push({ id: `queued:${this.queuedCount}`, text });
+    if (this.queued.length > MAX_QUEUED) this.queued.shift();
+    this.refresh(ctx);
+  }
+
   event(event, ctx) {
     this.ctx = ctx;
+    if (event.type === "message_start" && event.message?.role === "user" && this.queued.length) {
+      const text = clip(contentText(event.message.content).trim());
+      const index = this.queued.findIndex((entry) => entry.text === text);
+      this.queued.splice(index >= 0 ? index : 0, 1);
+    }
+    if (event.type === "agent_settled" && !ctx.hasPendingMessages?.()) this.queued = [];
     if (event.type === "message_end") {
       // Pi emits extension message_end BEFORE SessionManager.appendMessage.
       // Refresh on the next event-loop turn, after persistence has completed.

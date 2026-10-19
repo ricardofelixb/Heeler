@@ -212,10 +212,20 @@ struct PiConversationView: View {
             }
             .tint(secondary)
         } else if row.role == "user" {
-            HStack {
-                Spacer(minLength: 32)
-                Text(verbatim: row.text).textSelection(.enabled)
-                    .padding(14).background(surface, in: RoundedRectangle(cornerRadius: 18))
+            // Sent while Pi works: faded until Pi takes it to steer.
+            let isQueued = row.state == "queued"
+            VStack(alignment: .trailing, spacing: 4) {
+                HStack {
+                    Spacer(minLength: 32)
+                    Text(verbatim: row.text).textSelection(.enabled)
+                        .padding(14).background(surface, in: RoundedRectangle(cornerRadius: 18))
+                        .opacity(isQueued ? 0.55 : 1)
+                }
+                if isQueued {
+                    Label("Queued", systemImage: "clock")
+                        .font(.caption)
+                        .foregroundStyle(secondary)
+                }
             }
         } else if row.role == "notice" {
             Text(verbatim: row.text).font(.caption).foregroundStyle(secondary).textSelection(.enabled)

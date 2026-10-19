@@ -1117,6 +1117,7 @@ struct AgentTerminalView: View {
                         palette: themePalette,
                         avatar: WorkspaceAgentPresentation.avatar(for: agent.id),
                         name: WorkspaceAgentPresentation.title(for: agent.agent),
+                        subtitle: console.hostStatuses.count > 1 ? agent.hostName : nil,
                         onBack: showsBackButton ? { dismiss() } : nil,
                         onOpen: { isAgentSheetPresented = true })
                 } else {
@@ -1342,7 +1343,8 @@ struct AgentTerminalView: View {
             },
             onFirstResponderRequest: composerFirstResponderRequest,
             onKeyboardHandoffSettled: composerKeyboardHandoffSettled,
-            commands: piCommands)
+            commands: piCommands,
+            backdrop: isTranscriptVisible ? themePalette.background : nil)
     }
 
     /// Pi's built-in and extension commands, as the mirror last reported them.

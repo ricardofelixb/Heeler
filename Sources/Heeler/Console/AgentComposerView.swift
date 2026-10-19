@@ -176,6 +176,9 @@ struct AgentComposerView: View {
     var inputMode: AgentInputMode = .composer
     /// The agent's own slash commands, suggested on `/` beside its skills.
     var commands: [AgentSkill] = []
+    /// A solid ground under the status line and everything below it, for a
+    /// screen whose content scrolls behind the Composer.
+    var backdrop: Color? = nil
     @State private var isInputFocused = false
     /// An explicit dismissal hides suggestions for the current trigger token;
     /// removing the token arms them again.
@@ -198,6 +201,25 @@ struct AgentComposerView: View {
                     hostTelemetry: hostTelemetry,
                     changes: changes,
                     chromeColorScheme: chromeColorScheme)
+                    // Drawn before the field and the strip, so it lies under
+                    // them; it runs past the screen's sides and foot, with a
+                    // short fade above the line.
+                    .background(alignment: .top) {
+                        if let backdrop {
+                            VStack(spacing: 0) {
+                                LinearGradient(
+                                    colors: [backdrop.opacity(0), backdrop],
+                                    startPoint: .top, endPoint: .bottom)
+                                    .frame(height: 20)
+                                backdrop
+                            }
+                            .padding(.top, -26)
+                            .padding(.horizontal, -60)
+                            .padding(.bottom, -600)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                        }
+                    }
 
                 VStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 8) {

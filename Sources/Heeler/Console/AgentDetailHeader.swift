@@ -91,6 +91,8 @@ struct AgentConversationHeader: View {
     let palette: TerminalThemePalette
     let avatar: Image
     let name: String
+    /// The Host, when more than one could be meant.
+    var subtitle: String? = nil
     let onBack: (() -> Void)?
     let onOpen: () -> Void
 
@@ -108,9 +110,17 @@ struct AgentConversationHeader: View {
                         .scaledToFit()
                         .frame(width: 28, height: 28)
                         .accessibilityHidden(true)
-                    Text(verbatim: name)
-                        .font(.body.weight(.semibold))
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(verbatim: name)
+                            .font(.body.weight(.semibold))
+                            .lineLimit(1)
+                        if let subtitle {
+                            Text(verbatim: subtitle)
+                                .font(.caption2)
+                                .foregroundStyle(palette.foreground.opacity(0.58))
+                                .lineLimit(1)
+                        }
+                    }
                     Image(systemName: "chevron.down")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(palette.foreground.opacity(0.58))
@@ -118,13 +128,14 @@ struct AgentConversationHeader: View {
                 .padding(.leading, 8)
                 .padding(.trailing, 14)
                 .frame(height: AgentDetailHeader.controlSize)
-                .frame(maxWidth: 260, alignment: .leading)
                 .contentShape(.capsule)
             }
             .buttonStyle(.plain)
             .fixedSize(horizontal: false, vertical: true)
             .headerGlass(in: .capsule)
-            Spacer(minLength: 0)
+            // The capsule hugs its name; a long one truncates short of the
+            // screen's far edge.
+            Spacer(minLength: 48)
         }
         .foregroundStyle(palette.foreground)
     }

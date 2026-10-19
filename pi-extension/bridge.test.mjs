@@ -187,3 +187,19 @@ test("an active socket is never replaced by another mirror", options, async (t) 
   const other = new PiMirrorBridge(f.bridge.options);
   await assert.rejects(other.start(f.ctx), /already active/);
 });
+
+test("messages sent while Pi works show as queued until Pi takes them", options, async (t) => {
+  const f = await fixture(t); const a = await f.client(); await a.next();
+  f.setIdle(false);
+  f.bridge.queue({ type: "input", text: "ignored while idle" }, f.ctx);
+  f.bridge.queue({ type: "input", text: " Use the other API ", streamingBehavior: "steer" }, f.ctx);
+  const queued = (await a.next()).rows.at(-1);
+  assert.deepEqual(queued, { id: "queued:1", role: "user", text: "Use the other API", state: "queued" });
+  f.bridge.event({ type: "message_start", message: { role: "user", content: "Use the other API" } }, f.ctx);
+  assert.equal((await a.next()).rows.some((row) => row.state === "queued"), false);
+  f.bridge.queue({ type: "input", text: "later", streamingBehavior: "followUp" }, f.ctx);
+  assert.equal((await a.next()).rows.at(-1).state, "queued");
+  f.ctx.hasPendingMessages = () => false;
+  f.bridge.event({ type: "agent_settled" }, f.ctx);
+  assert.equal((await a.next()).rows.some((row) => row.state === "queued"), false);
+});

@@ -33,6 +33,9 @@ Entries reference the pull request that made the change.
   quiet line instead of a card, in terminals and the Pi conversation alike;
   failure cards with actions are unchanged. (#1)
 
+- Personal fork preview: scrolling back through a Pi conversation shows a down
+  arrow that returns to the latest message, and iPhone stays in portrait. (#1)
+
 - Personal fork preview: a quieter By Workspace agent list with stable friend
   avatars, task-first titles, and compact status labels. New installations start
   By Workspace; saved presentation choices are preserved. (#1)

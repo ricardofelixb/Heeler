@@ -94,6 +94,27 @@ struct PiConversationView: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
+        // Back to the latest message, once you've scrolled away from it.
+        .overlay(alignment: .bottom) {
+            if !latestIsVisible && !store.rows.isEmpty {
+                Button {
+                    followsLatest = true
+                    withAnimation(.smooth) { scrollPosition.scrollTo(edge: .bottom) }
+                } label: {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 40, height: 40)
+                        .background(surface, in: Circle())
+                        .background(palette.background, in: Circle())
+                        .overlay(Circle().strokeBorder(secondary.opacity(0.25), lineWidth: 0.5))
+                        .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Scroll to latest")
+                .padding(.bottom, composerHeight + 12)
+                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
+        }
         .modifier(SystemScrollEdgeHidden())
         .background(palette.background)
         // Inside the safe-area extension, so this sees where the transcript
@@ -119,6 +140,7 @@ struct PiConversationView: View {
                     palette: palette)
             }
         }
+        .animation(.easeOut(duration: 0.2), value: latestIsVisible)
         .simultaneousGesture(TapGesture().onEnded { onReading() })
         .onScrollPhaseChange { previous, phase in
             scrollPhase = phase
